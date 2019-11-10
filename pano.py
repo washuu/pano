@@ -443,11 +443,27 @@ def return_address_value(dg,obj):
             #print ('did not find in',dg,'going to:',dg_obj[dg]['parent-dg'])
             return return_address_value(dg_obj[dg]['parent-dg'],a)
         else:
-            print ("E: could not find object for",a,"adding name as value")
+            #print ("E: could not find object for",a,"adding name as value")
             #exit()
             return a
     else:
         return a
+
+def object_count():
+    global dg_obj
+    start=time.time()
+    print ('Starting object count')
+    f=open('I_object_count.txt','w')
+    for dg in dg_obj.keys():
+        print ('{ dg:',dg,',',file=f)
+        for o in ['address','addressgroup','service','servicegroup','appgroup']:
+            print ('\t{',o,': [',file=f)
+            for a in dg_obj[dg][o].keys():
+                print ('\t\t{ dg:',dg,',',o,':',a,', count:',dg_obj[dg][o][a]['ref'],'}',file=f)
+            print ('\t] }',file=f)
+        print ('}',file=f)
+    f.close()
+    print ('Completed object_count in',time.time()-start)
 
 def return_service_value(dg,obj):
     global dg_obj
@@ -469,8 +485,8 @@ def return_service_value(dg,obj):
         return tmp
     elif a!='any' and a!='application-default' and a!='service-http' and a!='service-https':
         #print ('I have single object:',a)
-        dg_obj[dg]['service'][a]['ref']=dg_obj[dg]['service'][a]['ref']+1
         if a in dg_obj[dg]['service'].keys():
+            dg_obj[dg]['service'][a]['ref']=dg_obj[dg]['service'][a]['ref']+1
             if 'port' in dg_obj[dg]['service'][a].keys():
                 return str(dg_obj[dg]['service'][a]['port']+'/'+dg_obj[dg]['service'][a]['proto'])
             else:
@@ -553,15 +569,50 @@ def all_rules_print():
                 print('source unknown for dg:',dg,'rule:',rule,'s:',dg_obj[dg]['rule'][rule]['source'], 'd:',destination)
             if destination=='unknown':
                 print('dest unknown for dg:',dg,'rule:',rule,'s:',source, 'd:',dg_obj[dg]['rule'][rule]['destination'])
-            print ('dg:',dg,'rule:',rule,'from zones:',fzones,'to zones:',tzones,'type:',rtype,'source:',source,'destination',destination,'action:',action,'service:',services,'application',applications,file=f)
+            print ('{ dg:',dg,',rule:',rule,',from zones:',fzones,',to zones:',tzones,',type:',rtype,',source:',source,',destination',destination,',action:',action,',service:',services,',application',applications,'}',file=f)
     f.close()
     print ('Completed rules_print in',time.time()-start)
 
+def rules_for_dg(dg,f):
+    global dg_obj
+    for rule in dg_obj[dg]['rule'].keys():
+        try:
+            fzones=get_members(dg_obj[dg]['rule'][rule]['from'])
+            tzones=get_members(dg_obj[dg]['rule'][rule]['to'])
+            rtype=dg_obj[dg]['rule'][rule]['rtype']
+            action=dg_obj[dg]['rule'][rule]['action']
+            services=return_service_value(dg,dg_obj[dg]['rule'][rule]['service'])
+            applications=return_applications(dg,dg_obj[dg]['rule'][rule]['application'])
+            source=return_address_value(dg,dg_obj[dg]['rule'][rule]['source'])
+            destination=return_address_value(dg,dg_obj[dg]['rule'][rule]['destination'])
+        except KeyError:
+            g=open('E_rules_with_missing_attributes.txt','a')
+            print ('dg:',dg,'rule:',rule,'has missing attribute',file=g)
+            g.close()
+            print ("Exception:",sys.exc_info())
+        if source=='unknown':
+            print('source unknown for dg:',dg,'rule:',rule,'s:',dg_obj[dg]['rule'][rule]['source'], 'd:',destination)
+        if destination=='unknown':
+            print('dest unknown for dg:',dg,'rule:',rule,'s:',source, 'd:',dg_obj[dg]['rule'][rule]['destination'])
+        print ('{ dg:',dg,',rule:',rule,',from zones:',fzones,',to zones:',tzones,',type:',rtype,',source:',source,',destination',destination,',action:',action,',service:',services,',application',applications,'}',file=f)
+    if dg!='shared':
+        rules_for_dg(dg_obj[dg]['parent-dg'],f)
+
+
 def rules_for_devices_print():
     global t_obj,dg_obj,devices_id
+    f=open('I_rules2.txt','w')
+    start=time.time()
+    print ('Starting rules_print')    
     for d in devices_id.keys():
+        print(' { device:',d,file=f)
         for d2 in devices_id[d]['dg']:
-            print('device',d,'is assigned to DG:',d2,'parent:',dg_obj[d2]['parent-dg'],'and t:',devices_id[d]['t'])
+            #print('device',d,'is assigned to DG:',d2,'parent:',dg_obj[d2]['parent-dg'],'and t:',devices_id[d]['t'])
+            rules_for_dg(d2,f)
+        print ('}',file=f)
+    f.close()
+    print ('Completed rules_print in',time.time()-start)
+
     
 def template_interface_parser(t,line,regex,h):
     global templates, template_members
@@ -844,8 +895,10 @@ def main():
     address_names_check()
     #all_rules_print()
     rules_for_devices_print()
+    object_count()
     #print (devices_id)
-    #print(return_service_value('chwso-pa-ha1','UDP-49252-65535'))
+    #print (dg_obj['shared']['address']['Panorama-ELK_204.13.202.249'])
+    #print(return_service_value('atwso-pa-ha1','TCP-8006-8010'))
     #print(return_service_value('gua-pa-ha','Softlayer-Services-1-SRV'))
     #print(return_address_value('"Four Seasons"','LSVPN-GATEWAYS'))
     #print (dg_obj['"World Sales Offices"'])
