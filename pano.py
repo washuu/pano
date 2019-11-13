@@ -16,8 +16,15 @@
 #dg_obj[dg]['address'][address][attr]=value
 #co w template: interfejsy, zony, vpny, routing statyczny, routing per service, logowanie, panorama, network profiles, snmp, zmienne
 #t_obj[t]['interface'][interface][attr]=value
+#ipki sa przypisane do interfejsu. interfejsy sa przypisane do zony, zony sa przypisane do templatów, template sa przypisane do urządzeń
+# template -> devices
+# template -> zone -> interfaces (possibly empty list)
+# template -> interface -> ip address (possibly empty list)
+# template-stack -> templates
 
-import re,time,sys
+
+import paramiko,re,time,sys
+
 #import string,re,pwd,sys,os.path,time,getopt,glob,errno
 # data structures - dictionaries:
 # address - description, disable-override, ip-netmask, fqdn, ip-range, tag 
@@ -85,8 +92,116 @@ variable = {}
 t_obj = {}
 st_obj = {}
 
+def load_config():
+    hostname = sys.argv[1]
+    username = sys.argv[2]
+    password = sys.argv[3] 
+    try: 
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.WarningPolicy)
+    
+        client.connect(hostname, port=22, username=username, password=password)
 
+        stdin, stdout, stderr = client.exec_command('set cli config-output-format set')
+        print (stdout.readlines())
+        stdin, stdout, stderr = client.exec_command('set cli pager off')
+        print (stdout.readlines())
+        stdin, stdout, stderr = client.exec_command('configure')
+        print (stdout.readlines())
+        stdin, stdout, stderr = client.exec_command('show')
+        print (stdout.readlines())
+        
+    finally: 
+        client.close()
 
+def addressInNetwork(ip,net):
+    #shamelessly copied from the stackoverflow, as my solution is much longer... 
+    # for some reason using the module ipaddress from python 3 turned out to be one order of magnitude slower than this function. 
+    # unfortunately, it turned out it does not work when the host part of the IP is non-zero, so it is NOT used in the main program. 
+    # i left it only for reference. 
+    ipaddr = struct.unpack('>L',socket.inet_aton(ip))[0]
+    netaddr,bits = net.split('/')
+    netmask = struct.unpack('>L',socket.inet_aton(netaddr))[0]
+    ipaddr_masked = ipaddr & (4294967295<<(32-int(bits)))   # Logical AND of IP address and mask will equal the network address if it matches
+    if netmask == netmask & (4294967295<<(32-int(bits))):   # Validate network address is valid for mask
+            return ipaddr_masked == netmask
+    else:
+            print ("***WARNING*** Network",netaddr,"not valid with mask /"+bits)
+            return ipaddr_masked == netmask
+
+def get_ip_range(ip):
+    #function expects argument in form a.b.c.d[/x|-e.f.g.h], as text. 
+    #returns two lists of numeric octets, respectively for first and last IP for the range. 
+    #alhough it looks clumsy, it's actually faster than many other implementations, and it is resistant to "non-zero host part" error. 
+
+    if '/' in ip:
+        t=ip.split('/')
+        mask=int(t[1])
+        ip=t[0]
+        start_ip=list(int(part) for part in ip.split('.'))
+        k=2**((32-mask)%8)
+        if mask>=24:
+            start_ip[3]=start_ip[3]-start_ip[3]%k
+            end_ip=start_ip.copy()
+            end_ip[3]=start_ip[3]+k-1
+        elif mask>=16:
+            start_ip[3]=0
+            start_ip[2]=start_ip[2]-start_ip[2]%k
+            end_ip=start_ip.copy()
+            end_ip[2]=start_ip[2]+k-1
+        elif mask>=8:
+            start_ip[3]=0
+            start_ip[2]=0
+            start_ip[1]=start_ip[1]-start_ip[1]%k
+            end_ip=start_ip.copy()
+            end_ip[1]=start_ip[1]+k-1
+        else:
+            start_ip[3]=0
+            start_ip[2]=0
+            start_ip[1]=0
+            start_ip[0]=start_ip[0]-start_ip[0]%k
+            end_ip=start_ip.copy()
+            end_ip[0]=start_ip[0]+k-1
+    elif '-' in ip:
+        t=ip.split('-')
+        start_ip=t[0]
+        end_ip=t[1]
+        start_ip=list(int(part) for part in start_ip.split('.'))
+        end_ip=list(int(part) for part in end_ip.split('.'))
+    else:    #single IP
+        start_ip=list(int(part) for part in ip.split('.'))
+        end_ip=start_ip
+    return (start_ip,end_ip)
+
+def is_in_range(ip1,ip2):
+    #function expects both arguments in form a.b.c.d[/x|-e.f.g.h], as text. 
+    #exit codes: 
+    #0 - ip1 and ip2 are identical
+    #1 - ip1 is part of ip2
+    #2 - ip2 is part of ip1
+    #3 - ip1 and ip2 are separate
+    #4 - partial overlap
+    #5 - error, at least one IP has some formatting problem
+
+    start_ip1, end_ip1 = get_ip_range(ip1)
+    start_ip2, end_ip2 = get_ip_range(ip2)
+#    print('I have IP1 range:',start_ip1,'-:',end_ip1)
+#    print('I have IP2 range:',start_ip2,'-:',end_ip2)
+
+    if start_ip1==start_ip2:
+        if end_ip1==end_ip2: return 0
+        elif end_ip1<end_ip2: return 1
+        else: return 2
+    elif start_ip1<start_ip2: 
+        if start_ip2>end_ip1: return 3
+        elif end_ip1>=end_ip2: return 2
+        else: return 4
+    else:   #start_ip1>start_ip2
+        if start_ip1 > end_ip2: return 3
+        elif end_ip1<=end_ip2: return 1
+        else: return 4
+    
 def rules_parser(dg,line,regex,g):
     global dg_inv, dg_obj
     #g=open('W_unmatched_lines','a')
@@ -598,6 +713,36 @@ def rules_for_dg(dg,f):
     if dg!='shared':
         rules_for_dg(dg_obj[dg]['parent-dg'],f)
 
+def devices_ips():
+    global t_obj,devices_id
+    f=open('I_devices_IPs.txt','w')
+    start=time.time()
+    for d in devices_id.keys():
+        devices_id[d]['zone_ip']={}
+        for t in devices_id[d]['t']:
+            #print('D:',d,'t:',t)
+            for z in t_obj[t]['zone'].keys():
+                #print('D:',d,'t:',t,'z:',z)
+                x=zone_to_ip(t,z)
+                print(x)
+                if x:
+                    devices_id[d]['zone_ip'][z]=[]
+                    devices_id[d]['zone_ip'][z].append(x)
+            for t2 in t_obj[t]['tmembers']:
+                for z in t_obj[t2]['zone'].keys():
+                    x=zone_to_ip(t2,z)
+                    #print ('checking d:',d,'t:',t,'t2:',t2,'z:',z,'x:',x)
+                    if x: 
+                        if z not in devices_id[d]['zone_ip'].keys():
+                            devices_id[d]['zone_ip'][z]=[]
+                        if isinstance(x,list):
+                            for x2 in x:
+                                devices_id[d]['zone_ip'][z].append(x2)
+                        else: 
+                            devices_id[d]['zone_ip'][z].append(x)
+        print('Device:',d,'IPs:',devices_id[d]['zone_ip'],file=f)
+    f.close()
+    print ('Completed devices_ips in',time.time()-start)
 
 def rules_for_devices_print():
     global t_obj,dg_obj,devices_id
@@ -617,6 +762,7 @@ def rules_for_devices_print():
 def template_interface_parser(t,line,regex,h):
     global templates, template_members
     line=re.sub('layer3 ','',line)
+    line=re.sub('units ','',line)
     #print("template_interface_parser: dostalem linie",line)
     match = regex.match(line)
     if match:
@@ -638,7 +784,7 @@ def template_interface_parser(t,line,regex,h):
                 t_obj[t]['interface'][intf]={}
             if attr not in t_obj[t]['interface'][intf].keys():
                 t_obj[t]['interface'][intf][attr]=value
-            else:
+            elif t_obj[t]['interface'][intf][attr]!=value:
                 print("E: template interface conflict? t=",t,"intf=",intf,"attr=",attr,"old value=",t_obj[t]['interface'][intf][attr],"new value=",value)
     else:
         print("template_interface_parser:",t," not matched >",line,file=h)
@@ -664,7 +810,7 @@ def template_zone_parser(t,line,regex,h):
         zname=match.group('zname')
         intf=get_members(match.group('intf'))
         if zname not in t_obj[t]['zone'].keys():
-            t_obj[t]['zone'][zname]={}
+            t_obj[t]['zone'][zname]={'ref':0}
         if 'interface' in t_obj[t]['zone'][zname]:
             print('possible conflict?')
         else:
@@ -702,6 +848,7 @@ def add_t(t):
     t_obj[t]['interface']={}
     t_obj[t]['zone']={}
     t_obj[t]['system_ip']=''
+    t_obj[t]['tmembers']=[]
 
 def zone_to_ip(t,zone):
     global t_obj
@@ -731,7 +878,8 @@ def zone_to_ip(t,zone):
             pass
             #print ('interface list empty for zone',zone,'in template',t)
     else:
-        print ('no zone',zone,'in template',t)
+        #print ('no zone',zone,'in template',t)
+        pass
         
     #set template-stack KOE_Stack-2 templates [ koe-pa-ha2 KOE-Master "Hotels 3020 Shared B" "Four Seasons Shared" ]
     #set template-stack KOE_Stack-2 settings default-vsys vsys1
@@ -781,7 +929,7 @@ def main():
     handle = open(filename, 'r')
     line_counter=dg_line_counter=rule_counter=template_line_counter=other_counter=0
     #devicegroup regexes:
-    global_regex = re.compile('set (?P<type>[a-z-]+) +(?P<object>[a-zA-sZ0-9-]+|\"[a-zA-Z0-9- ]+\") (?P<rest>.*)$')
+    global_regex = re.compile('set (?P<type>[a-z-]+) +(?P<object>[a-zA-sZ0-9-_]+|\"[a-zA-Z0-9-_ ]+\") (?P<rest>.*)$')
 #    dgroup_regex = re.compile('set device-group (?P<dgroup>[a-zA-sZ0-9-]+|\"[a-zA-Z0-9- ]+\") (?P<rest>.*)$')
 #    shared_regex = re.compile('set shared (?P<rest>.*)$')
     rule_regex = re.compile('(?P<rtype>[a-z-]+) security rules (?P<rname>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
@@ -797,9 +945,10 @@ def main():
     system_ip_regex = re.compile('config +deviceconfig system ip-address (?P<sysip>[0-9]+.[0-9+]+.[0-9]+.[0-9]+)')
     devices_regex = re.compile('devices (?P<device_id>[0-9 ]+)')
     template_regex = re.compile('set template (?P<tmpl>[a-zA-sZ0-9-]+|\"[a-zA-Z0-9- ]+\") (?P<rest>.*)$')
+    ts_regex = re.compile('templates (?P<tmembers>.*)$')
     interface_regex = re.compile('config +vsys vsys1 zone DMZ network layer3 ethernet1/9.253')
     interface_zone_regex=re.compile('config +vsys vsys[0-9] zone (?P<zname>[a-zA-Z0-9_-]+) network layer3 (?P<intf>.*)')
-    interface_ip_regex=re.compile('config +network interface (ethernet |loopback |tunnel |aggregate-ethernet )((?P<pintf>[a-z0-9/]+) )?(units (?P<lintf>[a-z0-9/.]+))? ?(?P<attr>[a-z0-9-]+) (?P<value>.+)')
+    interface_ip_regex=re.compile('config +network interface (ethernet|loopback |tunnel |aggregate-ethernet )( (?P<pintf>[a-z0-9\/]+) )?(?P<lintf>[a-z0-9\/.]+)? (?P<attr>[a-z0-9- ]+) (?P<value>[0-9a-zA-Z-.\/]+)')
     stack_regex=re.compile('set template-stack (?P<stack>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
     var_regex=re.compile('variable $(?P<var>[a-zA-Z0-9-]+) type (?P<attr>[a-z-]+) (?P<value>.+)')
     
@@ -872,6 +1021,10 @@ def main():
                 parse_var(object,r,var_regex)
             elif r[0:8]=="devices ":
                 devices_parser('',object,r,devices_regex)
+            elif r[0:10]=="templates ":
+                m=ts_regex.match(r)
+                if m:
+                    t_obj[object]['tmembers']=get_members(m.group('tmembers'))
             else: 
                 pass
                 print ("template(-stack):",object,"line without match:",r,file=g2)
@@ -895,6 +1048,7 @@ def main():
     address_names_check()
     #all_rules_print()
     rules_for_devices_print()
+    devices_ips()
     object_count()
     #print (devices_id)
     #print (dg_obj['shared']['address']['Panorama-ELK_204.13.202.249'])
