@@ -140,7 +140,7 @@ def addressInNetwork(ip, net):
 
 
 
-class config(): 
+class config():
 
 
     def __init__(self):
@@ -565,7 +565,7 @@ class config():
                     print("Error in", a, "could not find", b, "adding name")
                     tmp.append(b)
             return tmp
-        elif a != 'any':
+        if a != 'any':
             # print('I have single object:', a)
             if a in self.dg_obj[dg]['address'].keys():
                 self.dg_obj[dg]['address'][a]['ref'] = self.dg_obj[dg]['address'][a]['ref']+1
@@ -577,23 +577,23 @@ class config():
                     return self.dg_obj[dg]['address'][a]['fqdn']
                 elif "ip-wildcard" in self.dg_obj[dg]['address'][a].keys():
                     return self.dg_obj[dg]['address'][a]['ip-wildcard']
-            elif a in self.dg_obj[dg]['addressgroup'].keys():
+                else: 
+                    print ('bad address type? ',a)
+                    return None
+            if a in self.dg_obj[dg]['addressgroup'].keys():
                 self.dg_obj[dg]['addressgroup'][a]['ref'] = self.dg_obj[dg]['addressgroup'][a]['ref']+1
                 tmp = []
                 for m in self.dg_obj[dg]['addressgroup'][a]['members']:
                     if m != ']' and m != '[':
                         tmp.append(self.return_address_value(dg, m))
                 return tmp
-            elif dg != 'shared':
+            if dg != 'shared':
                 # print('did not find in', dg, 'going to:', self.dg_obj[dg]['parent-dg'])
                 return self.return_address_value(self.dg_obj[dg]['parent-dg'], a)
-            else:
                 # print("E: could not find object for", a, "adding name as value")
                 # exit()
-                return a
-        else:
-            return a
-
+        return a
+        
 
     def object_count(self):
         start = time.time()
@@ -635,8 +635,7 @@ class config():
                 self.dg_obj[dg]['service'][a]['ref'] = self.dg_obj[dg]['service'][a]['ref']+1
                 if 'port' in self.dg_obj[dg]['service'][a].keys():
                     return str(self.dg_obj[dg]['service'][a]['port']+'/'+self.dg_obj[dg]['service'][a]['proto'])
-                else:
-                    print("cannot find port for dg:", dg, "service:", a)
+                print("cannot find port for dg:", dg, "service:", a)
             elif a in self.dg_obj[dg]['servicegroup'].keys():
                 self.dg_obj[dg]['servicegroup'][a]['ref'] = self.dg_obj[dg]['servicegroup'][a]['ref']+1
                 tmp = []
@@ -647,12 +646,9 @@ class config():
             elif dg != 'shared':
                 # print('did not find in', dg, 'going to:', self.dg_obj[dg]['parent-dg'])
                 return self.return_service_value(self.dg_obj[dg]['parent-dg'], a)
-            else:
-                print("E: could not find service for", a, "adding name as value")
+            print("E: could not find service for", a, "adding name as value")
                 # exit()
-                return a
-        else:
-            return a
+        return a
 
 
     def return_applications(self, dg, obj):
@@ -703,10 +699,10 @@ class config():
                     tzones = get_members(self.dg_obj[dg]['rule'][rule]['to'])
                     rtype = self.dg_obj[dg]['rule'][rule]['rtype']
                     action = self.dg_obj[dg]['rule'][rule]['action']
-                    services = return_service_value(dg, self.dg_obj[dg]['rule'][rule]['service'])
-                    applications = return_applications(dg, self.dg_obj[dg]['rule'][rule]['application'])
-                    source = return_address_value(dg, self.dg_obj[dg]['rule'][rule]['source'])
-                    destination = return_address_value(dg, self.dg_obj[dg]['rule'][rule]['destination'])
+                    services = self.return_service_value(dg, self.dg_obj[dg]['rule'][rule]['service'])
+                    applications = self.return_applications(dg, self.dg_obj[dg]['rule'][rule]['application'])
+                    source = self.return_address_value(dg, self.dg_obj[dg]['rule'][rule]['source'])
+                    destination = self.return_address_value(dg, self.dg_obj[dg]['rule'][rule]['destination'])
                 except KeyError:
                     g = open('E_rules_with_missing_attributes.txt', 'a')
                     print('dg:', dg, 'rule:', rule, 'has missing attribute', file=g)
@@ -891,7 +887,9 @@ class config():
 
 
     def zone_to_ip(self, t, zone):
-        #global self.t_obj
+        """
+        function gives a list of IPs for the interfaces bound to zone in template t, or Null
+        """
         if zone in self.t_obj[t]['zone'].keys():
             i = get_members(self.t_obj[t]['zone'][zone]['interface'])
             if i != '':
@@ -920,6 +918,7 @@ class config():
         else:
             # print('no zone', zone, 'in template', t)
             pass
+        return None
 
         # set template-stack KOE_Stack-2 templates [ koe-pa-ha2 KOE-Master "Hotels 3020 Shared B" "Four Seasons Shared" ]
         # set template-stack KOE_Stack-2 settings default-vsys vsys1
@@ -936,7 +935,7 @@ class config():
         f.close()
 
 
-    def parse_var(self,t, l, r):
+    def parse_var(self, t, l, r):
         # variable $IVSCOL type ip-netmask 10.136.2.10
         # variable $(?P<var>[a-zA-Z0-9-]+) type (?P<attr>[a-z-]+) (?P<value>.+)
         # global variable
@@ -1084,7 +1083,7 @@ class config():
         print("znalazlem", len(self.devicegroups), "device groups", len(self.templates), "templates")
 
 def main():
-    pa=config()
+    pa = config()
     filename = "pano_28.log"
     handle = open(filename, 'r')
     pa.main_parser(handle)
@@ -1102,13 +1101,12 @@ def main():
     # print(pa.return_service_value('gua-pa-ha', 'Softlayer-Services-1-SRV'))
     # print(pa.return_address_value('"Four Seasons"', 'LSVPN-GATEWAYS'))
     # print(pa.dg_obj['"World Sales Offices"'])
-    # print(pa.dg_obj['shared']['address']['10.210.72.100'])
-    # print(pa.return_address_value('atwso-pa-ha1', '[ "GoldLine - 172.16.116.0_24" VOIP-172.16.101.0_24 WRO-172.16.0.0_18 WRO-172.16.0.16 WRO-172.16.0.18 WRO-172.16.0.19 WRO-172.16.0.20 WRO-172.16.0.34 WRO-172.16.0.35 WRO-172.16.0.40 WRO-172.16.0.69 ]'))
-    # print(pa.return_address_value('cfs-pa-ha', 'CFS-PMSDB-10.34.10.130'))
-    # print(pa.return_applications('gua-pa-ha', 'BackupExectoMail-APP'))
+    print(pa.return_address_value('atwso-pa-ha1', '[ "GoldLine - 172.16.116.0_24" VOIP-172.16.101.0_24 WRO-172.16.0.0_18 WRO-172.16.0.16 WRO-172.16.0.18 WRO-172.16.0.19 WRO-172.16.0.20 WRO-172.16.0.34 WRO-172.16.0.35 WRO-172.16.0.40 WRO-172.16.0.69 ]'))
+    print(pa.return_address_value('cfs-pa-ha', 'CFS-PMSDB-10.34.10.130'))
+    print(pa.return_applications('gua-pa-ha', 'BackupExectoMail-APP'))
 
 
 if __name__ == "__main__":
-    start = time.time()
+    main_start = time.time()
     main()
-    print("wykonanie zajelo", time.time()-start)
+    print("wykonanie zajelo", time.time()-main_start)
