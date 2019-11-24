@@ -146,51 +146,54 @@ class config():
     def __init__(self):
         self.devicegroups = set()
         self.dg_inv = {}
-        self.dg_obj = {}
-        self.devices_id = {}
-
-        # addresses = set()
-        # address_ip = {}
-        # address_fqdn = {}
-        # address_tags = {}
-        # address_desc = {}
-        # addressgroup - static [], tag
-        # addressgroups = set()
-        # addressgroup_members = {}
-        # addressgroup_tags = {}
-        # security rules - post/pre-rulebase, action, application, category, description, destination, disabled, from, group-tag, hip-profiles, rule type, service, source, source-user, tag, target, to
-        # rules = set()
-        # rule_type = {}
-        # rule_action = {}
-        # rule_app = {}
-        # rule_src = {}
-        # rule_dst = {}
-        # rule_cat = {}
-        # rule_fzones = {}
-        # rule_tzones = {}
-        # rule_services = {}
-
-        # services = set()
-        # service_proto ={}
-        # service_port = {}
-        # service_desc = {}
-
-        # servicegroups = set()
-        # servicegroup_members = {}
-        # data structures - sets:
-
-        self.devicegroup_members = {}
-
-        # servicegroups = set()
-        # servicegroup_members = {}
-
-        # appgroups = set()
-        # appgroup_members = {}
+        self.deviceid = {}
+        self.parent = {}
+        self.address = {}
+        self.addressgroup = {}
+        self.rule = {}
+        self.nat = {}
+        self.service = {}
+        self.servicegroup = {}
+        self.appgroup = {'shared':{}}
 
         self.templates = set()
+        self.interface_zone = {}
+        self.interface_ip = {}
+        self.zone = {}
+        self.systemip = {}
+        self.tmembers = {}
         self.variable = {}
-        self.t_obj = {}
-        self.t_inv = {}
+
+    def add_dg(self, dg):
+        self.rule[dg] = {}
+        self.nat[dg] = {}
+        self.service[dg] = {}
+        self.address[dg] = {}
+        self.addressgroup[dg] = {}
+        self.servicegroup[dg] = {}
+        self.appgroup[dg] = {}
+        self.parent[dg] = 'shared'
+        self.devicegroups.add(dg)
+        self.dg_inv[dg] = {}
+        self.dg_inv[dg]['addresses'] = set()
+        self.dg_inv[dg]['rules'] = set()
+        self.dg_inv[dg]['nats'] = set()
+        self.dg_inv[dg]['services'] = set()
+        self.dg_inv[dg]['addressgroups'] = set()
+        self.dg_inv[dg]['servicegroups'] = set()
+        self.dg_inv[dg]['appgroups'] = set()
+        #self.dg_obj[dg] = {}
+        # print('adding dg', dg)
+
+
+    def add_t(self, t):
+        self.templates.add(t)
+        self.interface_zone[t] = {}
+        self.interface_ip[t] = {}
+        self.zone[t] = {}
+        self.systemip[t] = {}
+        self.tmembers[t] = {}
+
 
 
     def load_config_ssh(self):
@@ -226,7 +229,6 @@ class config():
 
 
     def rules_parser(self, dg, line, regex, g):
-        #global self.dg_inv, self.dg_obj
         # g = open('W_unmatched_lines', 'a')
         # set device-group man-pa-ha post-rulebase security rules "GOLD IMAGE ID 016a-print-over-ms-smb" from Workstations
         # set device-group "AWS Singapore" pre-rulebase security rules "Softlayer and AWS-TGW - patch management" service [ TCP-8027 TCP-8031 TCP-8383 ]
@@ -242,20 +244,20 @@ class config():
             if rname not in self.dg_inv[dg]['rules']:
                 self.dg_inv[dg]['rules'].add(rname)
                 # print('adding rule', rname)
-            if rname not in self.dg_obj[dg]['rule'].keys():
-                self.dg_obj[dg]['rule'][rname] = {}
-                self.dg_obj[dg]['rule'][rname]['ref'] = 0
+            if rname not in self.rule[dg].keys():
+                self.rule[dg][rname] = {}
+                self.rule[dg][rname]['ref'] = 0
                 # print('creating dict for ', rname)
-            # print(self.dg_obj[dg]['rule'][rname])
+            # print(self.rule[dg][rname])
             # try:
-            if attr not in self.dg_obj[dg]['rule'][rname].keys():
-                self.dg_obj[dg]['rule'][rname][attr] = value
-                self.dg_obj[dg]['rule'][rname]['rtype'] = rtype
+            if attr not in self.rule[dg][rname].keys():
+                self.rule[dg][rname][attr] = value
+                self.rule[dg][rname]['rtype'] = rtype
             else:
                 if attr == "target":
-                    self.dg_obj[dg]['rule'][rname][attr] = " "+value
+                    self.rule[dg][rname][attr] = " "+value
                 else:
-                    print("E: security rules conflict? dg = ", dg, "rname = ", rname, "attr = ", attr, "old value = ", self.dg_obj[dg]['rule'][rname][attr], "new value = ", value)
+                    print("E: security rules conflict? dg = ", dg, "rname = ", rname, "attr = ", attr, "old value = ", self.rule[dg][rname][attr], "new value = ", value)
             # except AttributeError:
             #    print(self.dg_obj)
             #    exit
@@ -266,7 +268,6 @@ class config():
 
 
     def nat_parser(self, dg, line, regex):
-        #global self.dg_inv, self.dg_obj
         match = regex.match(line)
         if match:
             rtype = match.group('rtype')
@@ -277,19 +278,19 @@ class config():
             if rname not in self.dg_inv[dg]['nats']:
                 self.dg_inv[dg]['nats'].add(rname)
                 # print('adding rule', rname)
-            if rname not in self.dg_obj[dg]['nat'].keys():
-                self.dg_obj[dg]['nat'][rname] = {}
+            if rname not in self.nat[dg].keys():
+                self.nat[dg][rname] = {}
                 # print('creating dict for ', rname)
-            # print(self.dg_obj[dg]['nat'][rname])
+            # print(self.nat[dg][rname])
             # try:
-            if attr not in self.dg_obj[dg]['nat'][rname].keys():
-                self.dg_obj[dg]['nat'][rname][attr] = value
-                self.dg_obj[dg]['nat'][rname]['rtype'] = rtype
+            if attr not in self.nat[dg][rname].keys():
+                self.nat[dg][rname][attr] = value
+                self.nat[dg][rname]['rtype'] = rtype
             else:
                 if attr == "target devices":
-                    self.dg_obj[dg]['nat'][rname][attr] = " "+value
+                    self.nat[dg][rname][attr] = " "+value
                 else:
-                    print("E: NAT rules conflict? dg = ", dg, "rname = ", rname, "attr = ", attr, "old value = ", self.dg_obj[dg]['nat'][rname][attr], "new value = ", value)
+                    print("E: NAT rules conflict? dg = ", dg, "rname = ", rname, "attr = ", attr, "old value = ", self.nat[dg][rname][attr], "new value = ", value)
             # except AttributeError:
             #    print(self.dg_obj)
             #    exit
@@ -298,7 +299,6 @@ class config():
 
 
     def address_parser(self, dg, line, regex):
-        # global self.dg_inv, self.dg_obj
         # print("D: ", dg, "addr_parser: dostalem linie", line)
         match = regex.match(line)
         if match:
@@ -308,20 +308,19 @@ class config():
             # print("D: matched line:", line, "found name", qaname, "with attr", qattr, "and value", qvalue)
             if qaname not in self.dg_inv[dg]['addresses']:
                 self.dg_inv[dg]['addresses'].add(qaname)
-            if qaname not in self.dg_obj[dg]['address'].keys():
-                self.dg_obj[dg]['address'][qaname] = {}
-                self.dg_obj[dg]['address'][qaname]['ref'] = 0
-            if qattr not in self.dg_obj[dg]['address'][qaname].keys():
-                self.dg_obj[dg]['address'][qaname][qattr] = qvalue
+            if qaname not in self.address[dg].keys():
+                self.address[dg][qaname] = {}
+                self.address[dg][qaname]['ref'] = 0
+            if qattr not in self.address[dg][qaname].keys():
+                self.address[dg][qaname][qattr] = qvalue
             else:
-                print("E: address conflict? dg = ", dg, "aname = ", qaname, "attr = ", qattr, "old value = ", self.dg_obj[dg]['address'][qaname][qattr], "new value = ", qvalue)
+                print("E: address conflict? dg = ", dg, "aname = ", qaname, "attr = ", qattr, "old value = ", self.address[dg][qaname][qattr], "new value = ", qvalue)
 
         else:
             print("W: address_parser: unmatched line", dg, line)
 
 
     def addrgroup_parser(self, dg, line, regex):
-        # global self.dg_inv, self.dg_obj
         match = regex.match(line)
         if match:
             agrp = match.group('agrp')
@@ -334,20 +333,19 @@ class config():
             # print("D: matched line:", line, "found name", agrp, 'attr', attr, "with members", agrpmembers)
             if agrp not in self.dg_inv[dg]['addressgroups']:
                 self.dg_inv[dg]['addressgroups'].add(agrp)
-            if agrp not in self.dg_obj[dg]['addressgroup'].keys():
-                self.dg_obj[dg]['addressgroup'][agrp] = {}
-                self.dg_obj[dg]['addressgroup'][agrp]['ref'] = 0
-            if attr not in self.dg_obj[dg]['addressgroup'][agrp].keys():
-                self.dg_obj[dg]['addressgroup'][agrp][attr] = agrpmembers
+            if agrp not in self.addressgroup[dg].keys():
+                self.addressgroup[dg][agrp] = {}
+                self.addressgroup[dg][agrp]['ref'] = 0
+            if attr not in self.addressgroup[dg][agrp].keys():
+                self.addressgroup[dg][agrp][attr] = agrpmembers
             else:
-                print("E: addgrp conflict? dg = ", dg, "agrp = ", agrp, "oldmembers = ", self.dg_obj[dg]['addressgroup'][agrp]['members'], "new members = ", agrpmembers)
+                print("E: addgrp conflict? dg = ", dg, "agrp = ", agrp, "oldmembers = ", self.addressgroup[dg][agrp]['members'], "new members = ", agrpmembers)
 
         else:
             print("W: addrgroup_parser: unmatched line", dg, line)
 
 
     def app_group_parser(self, dg, line, regex):
-        # global self.dg_inv, self.dg_obj
         match = regex.match(line)
         if match:
             agrp = match.group('agrp')
@@ -356,22 +354,22 @@ class config():
                 agrpmembers = line_split(match.group('data'))
             else:
                 agrpmembers = match.group('data')
-            # print("matched line:", line, "found name", agrp, 'attr', attr, "with members", agrpmembers)
+            # print("dg:",dg,"matched line:", line, "found name", agrp, 'attr', attr, "with members", agrpmembers)
+            # print (self.appgroup)
             if agrp not in self.dg_inv[dg]['appgroups']:
                 self.dg_inv[dg]['appgroups'].add(agrp)
-            if agrp not in self.dg_obj[dg]['appgroup'].keys():
-                self.dg_obj[dg]['appgroup'][agrp] = {}
-                self.dg_obj[dg]['appgroup'][agrp]['ref'] = 0
-            if attr not in self.dg_obj[dg]['appgroup'][agrp].keys():
-                self.dg_obj[dg]['appgroup'][agrp][attr] = agrpmembers
+            if agrp not in self.appgroup[dg].keys():
+                self.appgroup[dg][agrp] = {}
+                self.appgroup[dg][agrp]['ref'] = 0
+            if attr not in self.appgroup[dg][agrp].keys():
+                self.appgroup[dg][agrp][attr] = agrpmembers
             else:
-                print("appgrp conflict? dg = ", dg, "agrp = ", agrp, "oldmembers = ", self.dg_obj[dg]['appgroup'][agrp]['members'], "new members = ", agrpmembers)
+                print("appgrp conflict? dg = ", dg, "agrp = ", agrp, "oldmembers = ", self.appgroup[dg][agrp]['members'], "new members = ", agrpmembers)
         else:
             print("appgroup_parser: unmatched line", dg, line)
 
 
     def service_parser(self, dg, line, regex):
-        # global self.dg_inv, self.dg_obj
         f = open('W_missing_attribute', 'a')
         g = open('W_unmatched_lines', 'a')
         # print("service_parser: dostalem linie", dg, line)
@@ -388,16 +386,16 @@ class config():
             # print("matched line:", line, "found name", sname, "with attr", attr, "and value", value)
             if sname not in self.dg_inv[dg]['services']:
                 self.dg_inv[dg]['services'].add(sname)
-            if sname not in self.dg_obj[dg]['service'].keys():
-                self.dg_obj[dg]['service'][sname] = {}
-                self.dg_obj[dg]['service'][sname]['ref'] = 0
-            # print(self.dg_obj[dg]['service'][sname])
-            if attr not in self.dg_obj[dg]['service'][sname].keys():
-                self.dg_obj[dg]['service'][sname][attr] = value
-                if proto is not None: self.dg_obj[dg]['service'][sname]['proto'] = proto
+            if sname not in self.service[dg].keys():
+                self.service[dg][sname] = {}
+                self.service[dg][sname]['ref'] = 0
+            # print(self.service[dg][sname])
+            if attr not in self.service[dg][sname].keys():
+                self.service[dg][sname][attr] = value
+                if proto is not None: self.service[dg][sname]['proto'] = proto
             else:
-                print("service conflict? dg = ", dg, "sname = ", sname, "attr = ", attr, "old value = ", self.dg_obj[dg]['service'][sname][attr], "new value = ", value)
-            # print(self.dg_obj[dg]['service'][sname])
+                print("service conflict? dg = ", dg, "sname = ", sname, "attr = ", attr, "old value = ", self.service[dg][sname][attr], "new value = ", value)
+            # print(self.service[dg][sname])
         else:
             print("service_parser: unmatched line", dg, line, file=g)
         f.close()
@@ -405,7 +403,6 @@ class config():
 
 
     def service_group_parser(self, dg, line, regex):
-        #global self.dg_inv, self.dg_obj
         match = regex.match(line)
         if match:
             sgrp = match.group('sgrp')
@@ -417,13 +414,13 @@ class config():
             # print("matched line:", line, "found name", sgrp, 'attr', attr, "with members", sgrpmembers)
             if sgrp not in self.dg_inv[dg]['servicegroups']:
                 self.dg_inv[dg]['servicegroups'].add(sgrp)
-            if sgrp not in self.dg_obj[dg]['servicegroup'].keys():
-                self.dg_obj[dg]['servicegroup'][sgrp] = {}
-                self.dg_obj[dg]['servicegroup'][sgrp]['ref'] = 0
-            if attr not in self.dg_obj[dg]['servicegroup'][sgrp].keys():
-                self.dg_obj[dg]['servicegroup'][sgrp][attr] = sgrpmembers
+            if sgrp not in self.servicegroup[dg].keys():
+                self.servicegroup[dg][sgrp] = {}
+                self.servicegroup[dg][sgrp]['ref'] = 0
+            if attr not in self.servicegroup[dg][sgrp].keys():
+                self.servicegroup[dg][sgrp][attr] = sgrpmembers
             else:
-                print("srvgrp conflict? dg = ", dg, "sgrp = ", sgrp, "oldmembers = ", self.dg_obj[dg]['servicegroup'][sgrp]['members'], "new members = ", sgrpmembers)
+                print("srvgrp conflict? dg = ", dg, "sgrp = ", sgrp, "oldmembers = ", self.servicegroup[dg][sgrp]['members'], "new members = ", sgrpmembers)
         else:
             print("srvgroup_parser: unmatched line", dg, line)
 
@@ -436,30 +433,30 @@ class config():
             # print('found device', device_id, 'in dg', dg)
             if isinstance(device_id, list):
                 for m in device_id:
-                    if m not in self.devices_id.keys():
-                        self.devices_id[m] = {}
-                        self.devices_id[m]['dg'] = {}
-                        self.devices_id[m]['t'] = {}
+                    if m not in self.deviceid.keys():
+                        self.deviceid[m] = {}
+                        self.deviceid[m]['dg'] = {}
+                        self.deviceid[m]['t'] = {}
                     if dg != '':
-                        self.devices_id[m]['dg'].append(dg)
+                        self.deviceid[m]['dg'].append(dg)
                     if t != '':
-                        self.devices_id[m]['t'].append(t)
+                        self.deviceid[m]['t'].append(t)
             else:
-                if device_id not in self.devices_id.keys():
-                    self.devices_id[device_id] = {}
-                    self.devices_id[device_id]['dg'] = []
-                    self.devices_id[device_id]['t'] = []
+                if device_id not in self.deviceid.keys():
+                    self.deviceid[device_id] = {}
+                    self.deviceid[device_id]['dg'] = []
+                    self.deviceid[device_id]['t'] = []
                 if dg != '':
-                    self.devices_id[device_id]['dg'].append(dg)
+                    self.deviceid[device_id]['dg'].append(dg)
                     # print('adding', device_id, 'to dg', dg)
                 if t != '':
-                    self.devices_id[device_id]['t'].append(t)
+                    self.deviceid[device_id]['t'].append(t)
         else:
             print('devices_parser error! dg:', dg, 'l:', line)
 
 
     def address_names_check(self):
-        # self.dg_obj[dg]['address'][qaname][qattr] = qvalue
+        # self.address[dg][qaname][qattr] = qvalue
         start = time.time()
         print('Starting address_names_check')
         f = open('W_mismatch_name_and_content', 'w')
@@ -467,11 +464,10 @@ class config():
         netmask_regex = re.compile('(?P<first>[0-9]+)[.]+(?P<second>[0-9]+)[.]+(?P<third>[0-9]+)[.](?P<fourth>[0-9]+)/?(?P<mask>[0-9]*)')
         name_iprange_regex = re.compile('\"?(?P<zero>[a-zA-Z_ -]+|[a-zA-Z0-9_ -]+[-_ ])?(?P<f1>[0-9]+)[.](?P<f2>[0-9]+)[.](?P<f3>[0-9]+)[.](?P<f4>[0-9]+)[-](?P<t1>[0-9]+)[.](?P<t2>[0-9]+)[.](?P<t3>[0-9]+)[.](?P<t4>[0-9]+)')
         iprange_regex = re.compile('(?P<f1>[0-9]+)[.](?P<f2>[0-9]+)[.](?P<f3>[0-9]+)[.](?P<f4>[0-9]+)[-](?P<t1>[0-9]+)[.](?P<t2>[0-9]+)[.](?P<t3>[0-9]+)[.](?P<t4>[0-9]+)')
-        #global self.dg_obj
-        for dg in self.dg_obj.keys():
-            for obj in self.dg_obj[dg]['address'].keys():
-                if "ip-netmask" in self.dg_obj[dg]['address'][obj].keys():
-                    ip_value = self.dg_obj[dg]['address'][obj]['ip-netmask']
+        for dg in self.devicegroups:
+            for obj in self.address[dg].keys():
+                if "ip-netmask" in self.address[dg][obj].keys():
+                    ip_value = self.address[dg][obj]['ip-netmask']
                     match2 = netmask_regex.match(ip_value)
                     if match2:
                         mask2 = ("32" if match2.group('mask') == '' else match2.group('mask'))
@@ -496,9 +492,9 @@ class config():
                             print("I: DG:", dg, "found ip netmask, but the name", obj, "does not match IP, object is ", ip_value, file=f)
                     else:
                         print('E:cannot match IP from ip-netmask:', ip_value)
-                elif "ip-range" in self.dg_obj[dg]['address'][obj].keys():
-                    # print("D: obj:", obj, "ip-range: ", self.dg_obj[dg]['address'][obj]['ip-range'])
-                    ip_value = self.dg_obj[dg]['address'][obj]['ip-range']
+                elif "ip-range" in self.address[dg][obj].keys():
+                    # print("D: obj:", obj, "ip-range: ", self.address[dg][obj]['ip-range'])
+                    ip_value = self.address[dg][obj]['ip-range']
                     match2 = iprange_regex.match(ip_value)
                     if match2:
                         if match2.group('f1') == match2.group('t1') and match2.group('f2') == match2.group('t2') and match2.group('f3') == match2.group('t3'):
@@ -535,11 +531,11 @@ class config():
                                 else: print("I: dg:", dg, "found ip-range, ", obj, "but the name does not match", file=f)
                         else: print("I: obj:", obj, "ip range bigger than /24")
                     else: print('E: cannot match IP range from ip-range:', ip_value)
-                elif "fqdn" in self.dg_obj[dg]['address'][obj].keys():
-                    if self.dg_obj[dg]['address'][obj]['fqdn'] not in obj:
-                        # print("D: dg: ", dg, "obj:", obj, "found fqdn:", self.dg_obj[dg]['address'][obj]['fqdn'])
+                elif "fqdn" in self.address[dg][obj].keys():
+                    if self.address[dg][obj]['fqdn'] not in obj:
+                        # print("D: dg: ", dg, "obj:", obj, "found fqdn:", self.address[dg][obj]['fqdn'])
                         pass
-                elif "ip-wildcard" in self.dg_obj[dg]['address'][obj].keys():
+                elif "ip-wildcard" in self.address[dg][obj].keys():
                     pass
                 else:
                     print("E: not match for IP - DG:", dg, "addr:", obj)
@@ -548,48 +544,47 @@ class config():
 
 
     def return_address_value(self, dg, obj):
-        #global self.dg_obj
         a = get_members(obj)
         if isinstance(a, list):
             # print('i have a list:', a)
             tmp = []
             for b in a:
-                if b in self.dg_obj[dg]['addressgroup'].keys():
+                if b in self.addressgroup[dg].keys():
                     tmp.append(self.return_address_value(dg, b))
-                elif b in self.dg_obj[dg]['address'].keys():
+                elif b in self.address[dg].keys():
                     tmp.append(self.return_address_value(dg, b))
                 elif dg != 'shared':
-                    # print('did not find member', b, 'in', dg, 'going to:', self.dg_obj[dg]['parent-dg'])
-                    tmp.append(self.return_address_value(self.dg_obj[dg]['parent-dg'], b))
+                    # print('did not find member', b, 'in', dg, 'going to:', self.parent[dg])
+                    tmp.append(self.return_address_value(self.parent[dg], b))
                 else:
                     print("Error in", a, "could not find", b, "adding name")
                     tmp.append(b)
             return tmp
         if a != 'any':
             # print('I have single object:', a)
-            if a in self.dg_obj[dg]['address'].keys():
-                self.dg_obj[dg]['address'][a]['ref'] = self.dg_obj[dg]['address'][a]['ref']+1
-                if "ip-netmask" in self.dg_obj[dg]['address'][a].keys():
-                    return self.dg_obj[dg]['address'][a]['ip-netmask']
-                elif "ip-range" in self.dg_obj[dg]['address'][a].keys():
-                    return self.dg_obj[dg]['address'][a]['ip-range']
-                elif "fqdn" in self.dg_obj[dg]['address'][a].keys():
-                    return self.dg_obj[dg]['address'][a]['fqdn']
-                elif "ip-wildcard" in self.dg_obj[dg]['address'][a].keys():
-                    return self.dg_obj[dg]['address'][a]['ip-wildcard']
-                else: 
-                    print ('bad address type? ',a)
+            if a in self.address[dg].keys():
+                self.address[dg][a]['ref'] = self.address[dg][a]['ref']+1
+                if "ip-netmask" in self.address[dg][a].keys():
+                    return self.address[dg][a]['ip-netmask']
+                elif "ip-range" in self.address[dg][a].keys():
+                    return self.address[dg][a]['ip-range']
+                elif "fqdn" in self.address[dg][a].keys():
+                    return self.address[dg][a]['fqdn']
+                elif "ip-wildcard" in self.address[dg][a].keys():
+                    return self.address[dg][a]['ip-wildcard']
+                else:
+                    print('bad address type? ', a)
                     return None
-            if a in self.dg_obj[dg]['addressgroup'].keys():
-                self.dg_obj[dg]['addressgroup'][a]['ref'] = self.dg_obj[dg]['addressgroup'][a]['ref']+1
+            if a in self.addressgroup[dg].keys():
+                self.addressgroup[dg][a]['ref'] = self.addressgroup[dg][a]['ref']+1
                 tmp = []
-                for m in self.dg_obj[dg]['addressgroup'][a]['members']:
+                for m in self.addressgroup[dg][a]['members']:
                     if m != ']' and m != '[':
                         tmp.append(self.return_address_value(dg, m))
                 return tmp
             if dg != 'shared':
-                # print('did not find in', dg, 'going to:', self.dg_obj[dg]['parent-dg'])
-                return self.return_address_value(self.dg_obj[dg]['parent-dg'], a)
+                # print('did not find in', dg, 'going to:', self.parent[dg])
+                return self.return_address_value(self.parent[dg], a)
                 # print("E: could not find object for", a, "adding name as value")
                 # exit()
         return a
@@ -599,87 +594,101 @@ class config():
         start = time.time()
         print('Starting object count')
         f = open('I_object_count.txt', 'w')
-        for dg in self.dg_obj.keys():
+        for dg in self.devicegroups:
             print('{ dg:', dg, ', ', file=f)
-            for o in ['address', 'addressgroup', 'service', 'servicegroup', 'appgroup']:
-                print('\t{', o, ': [', file=f)
-                for a in self.dg_obj[dg][o].keys():
-                    print('\t\t{ dg:', dg, ', ', o, ':', a, ', count:', self.dg_obj[dg][o][a]['ref'], '}', file=f)
-                print('\t] }', file=f)
+            #for o in ['address', 'addressgroup', 'service', 'servicegroup', 'appgroup']:
+            print('\t{', 'address', ': [', file=f)
+            for a in self.address[dg].keys():
+                print('\t\t{ dg:', dg, ', ', 'address', ':', a, ', count:', self.address[dg][a]['ref'], '}', file=f)
+            print('\t] }', file=f)
+            print('\t{', 'addressgroup', ': [', file=f)
+            for a in self.addressgroup[dg].keys():
+                print('\t\t{ dg:', dg, ', ', 'addressgroup', ':', a, ', count:', self.addressgroup[dg][a]['ref'], '}', file=f)
+            print('\t] }', file=f)
+            print('\t{', 'service', ': [', file=f)
+            for a in self.service[dg].keys():
+                print('\t\t{ dg:', dg, ', ', 'service', ':', a, ', count:', self.service[dg][a]['ref'], '}', file=f)
+            print('\t] }', file=f)
+            print('\t{', 'servicegroup', ': [', file=f)
+            for a in self.servicegroup[dg].keys():
+                print('\t\t{ dg:', dg, ', ', 'servicegroup', ':', a, ', count:', self.servicegroup[dg][a]['ref'], '}', file=f)
+            print('\t] }', file=f)
+            print('\t{', 'appgroup', ': [', file=f)
+            for a in self.appgroup[dg].keys():
+                print('\t\t{ dg:', dg, ', ', 'appgroup', ':', a, ', count:', self.appgroup[dg][a]['ref'], '}', file=f)
+            print('\t] }', file=f)
             print('}', file=f)
         f.close()
         print('Completed object_count in', time.time()-start)
 
 
     def return_service_value(self, dg, obj):
-        #global self.dg_obj
         a = get_members(obj)
         if isinstance(a, list):
             # print('i have a list:', a)
             tmp = []
             for b in a:
-                if b in self.dg_obj[dg]['servicegroup'].keys():
+                if b in self.servicegroup[dg].keys():
                     tmp.append(self.return_service_value(dg, b))
-                elif b in self.dg_obj[dg]['service'].keys():
+                elif b in self.service[dg].keys():
                     tmp.append(self.return_service_value(dg, b))
                 elif dg != 'shared':
-                    # print('did not find member', b, 'in', dg, 'going to:', self.dg_obj[dg]['parent-dg'])
-                    tmp.append(self.return_service_value(self.dg_obj[dg]['parent-dg'], b))
+                    # print('did not find member', b, 'in', dg, 'going to:', self.parent[dg])
+                    tmp.append(self.return_service_value(self.parent[dg], b))
                 else:
                     print("Error in servicegroup", a, "could not find", b, "adding name")
                     tmp.append(b)
             return tmp
-        elif a != 'any' and a != 'application-default' and a != 'service-http' and a != 'service-https':
+        elif a not in ('any','application-default','service-http','service-https'):
             # print('I have single object:', a)
-            if a in self.dg_obj[dg]['service'].keys():
-                self.dg_obj[dg]['service'][a]['ref'] = self.dg_obj[dg]['service'][a]['ref']+1
-                if 'port' in self.dg_obj[dg]['service'][a].keys():
-                    return str(self.dg_obj[dg]['service'][a]['port']+'/'+self.dg_obj[dg]['service'][a]['proto'])
+            if a in self.service[dg].keys():
+                self.service[dg][a]['ref'] = self.service[dg][a]['ref']+1
+                if 'port' in self.service[dg][a].keys():
+                    return str(self.service[dg][a]['port']+'/'+self.service[dg][a]['proto'])
                 print("cannot find port for dg:", dg, "service:", a)
-            elif a in self.dg_obj[dg]['servicegroup'].keys():
-                self.dg_obj[dg]['servicegroup'][a]['ref'] = self.dg_obj[dg]['servicegroup'][a]['ref']+1
+            elif a in self.servicegroup[dg].keys():
+                self.servicegroup[dg][a]['ref'] = self.servicegroup[dg][a]['ref']+1
                 tmp = []
-                for m in self.dg_obj[dg]['servicegroup'][a]['members']:
-                    if m != ']' and m != '[':
+                for m in self.servicegroup[dg][a]['members']:
+                    if m not in (']','['):
                         tmp.append(self.return_service_value(dg, m))
                 return tmp
             elif dg != 'shared':
-                # print('did not find in', dg, 'going to:', self.dg_obj[dg]['parent-dg'])
-                return self.return_service_value(self.dg_obj[dg]['parent-dg'], a)
+                # print('did not find in', dg, 'going to:', self.parent[dg])
+                return self.return_service_value(self.parent[dg], a)
             print("E: could not find service for", a, "adding name as value")
                 # exit()
         return a
 
 
     def return_applications(self, dg, obj):
-        #global self.dg_obj
         a = get_members(obj)
         if isinstance(a, list):
             # print('i have a list:', a)
             tmp = []
             for b in a:
-                if b in self.dg_obj[dg]['appgroup'].keys():
+                if b in self.appgroup[dg].keys():
                     tmp.append(self.return_applications(dg, b))
             #    elif b in self.dg_obj[dg]['application'].keys():
             #        tmp.append(return_applications(dg, b))
                 elif dg != 'shared':
-                    # print('did not find member', b, 'in', dg, 'going to:', self.dg_obj[dg]['parent-dg'])
-                    tmp.append(self.return_applications(self.dg_obj[dg]['parent-dg'], b))
+                    # print('did not find member', b, 'in', dg, 'going to:', self.parent[dg])
+                    tmp.append(self.return_applications(self.parent[dg], b))
                 else:
                     # print("Error in appgroup", a, "could not find", b, "adding name")
                     tmp.append(b)
             return tmp
         elif a != 'any':
             # print('I have single object:', a)
-            if a in self.dg_obj[dg]['appgroup'].keys():
-                self.dg_obj[dg]['appgroup'][a]['ref'] = self.dg_obj[dg]['appgroup'][a]['ref']+1
+            if a in self.appgroup[dg].keys():
+                self.appgroup[dg][a]['ref'] = self.appgroup[dg][a]['ref']+1
                 tmp = []
-                for m in self.dg_obj[dg]['appgroup'][a]['members']:
+                for m in self.appgroup[dg][a]['members']:
                     if m != ']' and m != '[':
                         tmp.append(self.return_applications(dg, m))
                 return tmp
             elif dg != 'shared':
-                return self.return_applications(self.dg_obj[dg]['parent-dg'], a)
+                return self.return_applications(self.parent[dg], a)
             else:
                 return a
         else:
@@ -687,105 +696,102 @@ class config():
 
 
     def all_rules_print(self):
-        # self.dg_obj[dg]['rule'][rname][attr] = value
+        # self.rule[dg][rname][attr] = value
         start = time.time()
-        print('Starting rules_print')
+        print('Starting all rules_print')
         f = open('I_rules.txt', 'w')
-        for dg in self.dg_obj.keys():
-            print('dg:', dg)
-            for rule in self.dg_obj[dg]['rule'].keys():
+        for dg in self.devicegroups:
+            # print('dg:', dg)
+            for rule in self.rule[dg].keys():
                 try:
-                    fzones = get_members(self.dg_obj[dg]['rule'][rule]['from'])
-                    tzones = get_members(self.dg_obj[dg]['rule'][rule]['to'])
-                    rtype = self.dg_obj[dg]['rule'][rule]['rtype']
-                    action = self.dg_obj[dg]['rule'][rule]['action']
-                    services = self.return_service_value(dg, self.dg_obj[dg]['rule'][rule]['service'])
-                    applications = self.return_applications(dg, self.dg_obj[dg]['rule'][rule]['application'])
-                    source = self.return_address_value(dg, self.dg_obj[dg]['rule'][rule]['source'])
-                    destination = self.return_address_value(dg, self.dg_obj[dg]['rule'][rule]['destination'])
+                    fzones = get_members(self.rule[dg][rule]['from'])
+                    tzones = get_members(self.rule[dg][rule]['to'])
+                    rtype = self.rule[dg][rule]['rtype']
+                    action = self.rule[dg][rule]['action']
+                    services = self.return_service_value(dg, self.rule[dg][rule]['service'])
+                    applications = self.return_applications(dg, self.rule[dg][rule]['application'])
+                    source = self.return_address_value(dg, self.rule[dg][rule]['source'])
+                    destination = self.return_address_value(dg, self.rule[dg][rule]['destination'])
                 except KeyError:
                     g = open('E_rules_with_missing_attributes.txt', 'a')
                     print('dg:', dg, 'rule:', rule, 'has missing attribute', file=g)
                     g.close()
                     print("Exception:", sys.exc_info())
                 if source == 'unknown':
-                    print('source unknown for dg:', dg, 'rule:', rule, 's:', self.dg_obj[dg]['rule'][rule]['source'], 'd:', destination)
+                    print('source unknown for dg:', dg, 'rule:', rule, 's:', self.rule[dg][rule]['source'], 'd:', destination)
                 if destination == 'unknown':
-                    print('dest unknown for dg:', dg, 'rule:', rule, 's:', source, 'd:', self.dg_obj[dg]['rule'][rule]['destination'])
+                    print('dest unknown for dg:', dg, 'rule:', rule, 's:', source, 'd:', self.rule[dg][rule]['destination'])
                 print('{ dg:', dg, ', rule:', rule, ', from zones:', fzones, ', to zones:', tzones, ', type:', rtype, ', source:', source, ', destination', destination, ', action:', action, ', service:', services, ', application', applications, '}', file=f)
         f.close()
         print('Completed rules_print in', time.time()-start)
 
 
     def rules_for_dg(self, dg, f):
-        #global self.dg_obj
-        for rule in self.dg_obj[dg]['rule'].keys():
+        for rule in self.rule[dg].keys():
             try:
-                fzones = get_members(self.dg_obj[dg]['rule'][rule]['from'])
-                tzones = get_members(self.dg_obj[dg]['rule'][rule]['to'])
-                rtype = self.dg_obj[dg]['rule'][rule]['rtype']
-                action = self.dg_obj[dg]['rule'][rule]['action']
-                services = self.return_service_value(dg, self.dg_obj[dg]['rule'][rule]['service'])
-                applications = self.return_applications(dg, self.dg_obj[dg]['rule'][rule]['application'])
-                source = self.return_address_value(dg, self.dg_obj[dg]['rule'][rule]['source'])
-                destination = self.return_address_value(dg, self.dg_obj[dg]['rule'][rule]['destination'])
+                fzones = get_members(self.rule[dg][rule]['from'])
+                tzones = get_members(self.rule[dg][rule]['to'])
+                rtype = self.rule[dg][rule]['rtype']
+                action = self.rule[dg][rule]['action']
+                services = self.return_service_value(dg, self.rule[dg][rule]['service'])
+                applications = self.return_applications(dg, self.rule[dg][rule]['application'])
+                source = self.return_address_value(dg, self.rule[dg][rule]['source'])
+                destination = self.return_address_value(dg, self.rule[dg][rule]['destination'])
             except KeyError:
                 g = open('E_rules_with_missing_attributes.txt', 'a')
                 print('dg:', dg, 'rule:', rule, 'has missing attribute', file=g)
                 g.close()
                 print("Exception:", sys.exc_info())
             if source == 'unknown':
-                print('source unknown for dg:', dg, 'rule:', rule, 's:', self.dg_obj[dg]['rule'][rule]['source'], 'd:', destination)
+                print('source unknown for dg:', dg, 'rule:', rule, 's:', self.rule[dg][rule]['source'], 'd:', destination)
             if destination == 'unknown':
-                print('dest unknown for dg:', dg, 'rule:', rule, 's:', source, 'd:', self.dg_obj[dg]['rule'][rule]['destination'])
+                print('dest unknown for dg:', dg, 'rule:', rule, 's:', source, 'd:', self.rule[dg][rule]['destination'])
             print('{ dg:', dg, ', rule:', rule, ', from zones:', fzones, ', to zones:', tzones, ', type:', rtype, ', source:', source, ', destination', destination, ', action:', action, ', service:', services, ', application', applications, '}', file=f)
         if dg != 'shared':
-            self.rules_for_dg(self.dg_obj[dg]['parent-dg'], f)
+            self.rules_for_dg(self.parent[dg], f)
 
 
     def devices_ips(self):
-        #global self.t_obj, self.devices_id
         f = open('I_devices_IPs.txt', 'w')
         start = time.time()
-        for d in self.devices_id.keys():
-            self.devices_id[d]['zone_ip'] = {}
-            self.devices_id[d]['zone_ref'] = {}
-            for t in self.devices_id[d]['t']:
+        for d in self.deviceid.keys():
+            self.deviceid[d]['zone_ip'] = {}
+            self.deviceid[d]['zone_ref'] = {}
+            for t in self.deviceid[d]['t']:
                 # print('D:', d, 't:', t)
-                for z in self.t_obj[t]['zone'].keys():
+                for z in self.zone[t].keys():
                     # print('D:', d, 't:', t, 'z:', z)
                     x = self.zone_to_ip(t, z)
-                    self.devices_id[d]['zone_ip'][z] = []
-                    self.devices_id[d]['zone_ref'][z] = 0
+                    self.deviceid[d]['zone_ip'][z] = []
+                    self.deviceid[d]['zone_ref'][z] = 0
                     print(x)
                     if x:
-                        self.devices_id[d]['zone_ip'][z].append(x)
-                for t2 in self.t_obj[t]['tmembers']:
-                    for z in self.t_obj[t2]['zone'].keys():
-                        if z not in self.devices_id[d]['zone_ip'].keys():
-                            self.devices_id[d]['zone_ip'][z] = []
-                            self.devices_id[d]['zone_ref'][z] = 0
+                        self.deviceid[d]['zone_ip'][z].append(x)
+                for t2 in self.tmembers[t]:
+                    for z in self.zone[t2].keys():
+                        if z not in self.deviceid[d]['zone_ip'].keys():
+                            self.deviceid[d]['zone_ip'][z] = []
+                            self.deviceid[d]['zone_ref'][z] = 0
                         x = self.zone_to_ip(t2, z)
                         # print('checking d:', d, 't:', t, 't2:', t2, 'z:', z, 'x:', x)
                         if x:
                             if isinstance(x, list):
                                 for x2 in x:
-                                    self.devices_id[d]['zone_ip'][z].append(x2)
+                                    self.deviceid[d]['zone_ip'][z].append(x2)
                             else:
-                                self.devices_id[d]['zone_ip'][z].append(x)
-            print('Device:', d, 'IPs:', self.devices_id[d]['zone_ip'], file=f)
+                                self.deviceid[d]['zone_ip'][z].append(x)
+            print('Device:', d, 'IPs:', self.deviceid[d]['zone_ip'], file=f)
         f.close()
         print('Completed devices_ips in', time.time()-start)
 
 
     def rules_for_devices_print(self):
-        #global self.t_obj, self.dg_obj, devices_id
         f = open('I_rules2.txt', 'w')
         start = time.time()
-        print('Starting rules_print')
-        for d in self.devices_id.keys():
+        print('Starting rules_for_devices_print')
+        for d in self.deviceid.keys():
             print(' { device:', d, file=f)
-            for d2 in self.devices_id[d]['dg']:
+            for d2 in self.deviceid[d]['dg']:
                 # print('device', d, 'is assigned to DG:', d2, 'parent:', self.dg_obj[d2]['parent-dg'], 'and t:', devices_id[d]['t'])
                 self.rules_for_dg(d2, f)
             print('}', file=f)
@@ -794,7 +800,6 @@ class config():
 
 
     def template_interface_parser(self, t, line, regex, h):
-        #global templates, template_members
         line = re.sub('layer3 ', '', line)
         line = re.sub('units ', '', line)
         # print("template_interface_parser: dostalem linie", line)
@@ -812,12 +817,12 @@ class config():
             if attr is None or value is None:
                 print('template_interface_parser:', t, 'cannot properly parse line >', line)
                 return
-            if intf not in self.t_obj[t]['interface'].keys():
-                self.t_obj[t]['interface'][intf] = {}
-            if attr not in self.t_obj[t]['interface'][intf].keys():
-                self.t_obj[t]['interface'][intf][attr] = value
-            elif self.t_obj[t]['interface'][intf][attr] != value:
-                print("E: template interface conflict? t = ", t, "intf = ", intf, "attr = ", attr, "old value = ", self.t_obj[t]['interface'][intf][attr], "new value = ", value)
+            if intf not in self.interface_ip[t].keys():
+                self.interface_ip[t][intf] = {}
+            if attr not in self.interface_ip[t][intf].keys():
+                self.interface_ip[t][intf][attr] = value
+            elif self.interface_ip[t][intf][attr] != value:
+                print("E: template interface conflict? t = ", t, "intf = ", intf, "attr = ", attr, "old value = ", self.interface_ip[t][intf][attr], "new value = ", value)
         else:
             print("template_interface_parser:", t, " not matched >", line, file=h)
 
@@ -836,82 +841,51 @@ class config():
 
     def template_zone_parser(self, t, line, regex, h):
         # config  vsys vsys1 zone DMZ network layer3 ethernet1/9.253
-        #global templates, self.t_obj, line_split
+        # config  vsys vsys1 zone WRO network layer3 [ tunnel.5 tunnel.8 ]
         # print("template_zone_parser: dostalem t:", t, "linie", line)
         match = regex.match(line)
         if match:
             zname = match.group('zname')
             intf = get_members(match.group('intf'))
-            if zname not in self.t_obj[t]['zone'].keys():
-                self.t_obj[t]['zone'][zname] = {'ref': 0}
-            if 'interface' in self.t_obj[t]['zone'][zname]:
+            if zname not in self.interface_zone[t].keys():
+                self.interface_zone[t][zname] = []
+            if self.interface_zone[t][zname] != []:
                 print('possible conflict?')
             else:
-                self.t_obj[t]['zone'][zname]['interface'] = intf
+                self.interface_zone[t][zname] = intf
         else:
             pass
             print('template_zone_parser: unmatched line:', line, file=h)
 
 
-    def add_dg(self, dg):
-        #global devicegroups, self.dg_inv, self.dg_obj
-        self.devicegroups.add(dg)
-        self.dg_inv[dg] = {}
-        self.dg_inv[dg]['addresses'] = set()
-        self.dg_inv[dg]['rules'] = set()
-        self.dg_inv[dg]['nats'] = set()
-        self.dg_inv[dg]['services'] = set()
-        self.dg_inv[dg]['addressgroups'] = set()
-        self.dg_inv[dg]['servicegroups'] = set()
-        self.dg_inv[dg]['appgroups'] = set()
-        self.dg_obj[dg] = {}
-        self.dg_obj[dg]['address'] = {}
-        self.dg_obj[dg]['rule'] = {}
-        self.dg_obj[dg]['nat'] = {}
-        self.dg_obj[dg]['service'] = {}
-        self.dg_obj[dg]['addressgroup'] = {}
-        self.dg_obj[dg]['servicegroup'] = {}
-        self.dg_obj[dg]['appgroup'] = {}
-        self.dg_obj[dg]['device_id'] = set()
-        self.dg_obj[dg]['parent-dg'] = 'shared'
-        # print('adding dg', dg)
-
-
-    def add_t(self, t):
-        #global self.t_obj
-        self.t_obj[t] = {}
-        self.t_obj[t]['interface'] = {}
-        self.t_obj[t]['zone'] = {}
-        self.t_obj[t]['system_ip'] = ''
-        self.t_obj[t]['tmembers'] = []
-
-
     def zone_to_ip(self, t, zone):
         """
-        function gives a list of IPs for the interfaces bound to zone in template t, or Null
+        function gives a list of IPs for the interfaces bound to zone in template t, or None
         """
-        if zone in self.t_obj[t]['zone'].keys():
-            i = get_members(self.t_obj[t]['zone'][zone]['interface'])
+        if zone in self.interface_zone[t].keys():
+            i = get_members(self.interface_zone[t][zone])
             if i != '':
-                try:
-                    if isinstance(i, list):
-                        tmp = []
-                        for j in i:
-                            if 'ip' in self.t_obj[t]['interface'][j].keys():
-                                tmp.append(self.t_obj[t]['interface'][j]['ip'])
-                            else:
-                                pass
-                                # print('t:', t, 'z:', zone, 'i:', i, 'member:',j, 'no ip')
-                        return tmp
-                    else:
-                        if 'ip' in self.t_obj[t]['interface'][i].keys():
-                            return self.t_obj[t]['interface'][i]['ip']
+                if isinstance(i, list):
+                    tmp = []
+                    for j in i:
+                        if j not in self.interface_ip[t].keys():
+                            #print ("t:",t,"interface:",j,"is in zone",zone,"but has no IP")
+                            pass
+                        elif 'ip' in self.interface_ip[t][j].keys():
+                            tmp.append(self.interface_ip[t][j]['ip'])
                         else:
                             pass
-                            # print('t:', t, 'z:', zone, 'i:', i, 'no ip')
-                except KeyError:
-                    pass
-                    # print('KeyError t:', t, 'z:', zone, 'i:', i)
+                            # print('t:', t, 'z:', zone, 'i:', i, 'member:',j, 'no ip')
+                    return tmp
+                else:
+                    if i not in self.interface_ip[t].keys():
+                            # print ("t:",t,"interface:",i,"is in zone",zone,"but has no IP")
+                            pass
+                    elif 'ip' in self.interface_ip[t][i]:
+                        return self.interface_ip[t][i]['ip']
+                    else:
+                        pass
+                        # print('t:', t, 'z:', zone, 'i:', i, 'no ip')
             else:
                 pass
                 # print('interface list empty for zone', zone, 'in template', t)
@@ -927,18 +901,16 @@ class config():
 
 
     def zone_check(self):
-        #global self.t_obj
-        f = open("I_zones_interfaces_IPs.txt", 'w')
-        for t in self.t_obj.keys():
-            for z in self.t_obj[t]['zone'].keys():
-                print('t:', t, 'z:', z, self.zone_to_ip(t, z), file=f)
-        f.close()
+        file_handle = open("I_zones_interfaces_IPs.txt", 'w')
+        for t in self.interface_zone.keys():
+            for z in self.interface_zone[t].keys():
+                print('t:', t, 'z:', z, self.zone_to_ip(t, z), file=file_handle)
+        file_handle.close()
 
 
     def parse_var(self, t, l, r):
         # variable $IVSCOL type ip-netmask 10.136.2.10
         # variable $(?P<var>[a-zA-Z0-9-]+) type (?P<attr>[a-z-]+) (?P<value>.+)
-        # global variable
         m = r.match(l)
         if m:
             var = m.group(var)
@@ -959,17 +931,17 @@ class config():
         k = regex.match(l)
         if k:
             dg = k.group('dgroup')
-            self.dg_obj[dg]['parent-dg'] = k.group('parentdg')
+            self.parent[dg] = k.group('parentdg')
             # print(dg, 'has a parent of',k.group('parentdg'))
         else:
             print('parentdg_parser error for line', l)
 
     def main_parser(self, handle):
         line_counter = dg_line_counter = rule_counter = template_line_counter = other_counter = 0
-        # devicegroup regexes:
+        # devicegroups regexes:
         global_regex = re.compile('set (?P<type>[a-z-]+) +(?P<object>[a-zA-sZ0-9-_]+|\"[a-zA-Z0-9-_ ]+\") (?P<rest>.*)$')
-    #    dgroup_regex = re.compile('set device-group (?P<dgroup>[a-zA-sZ0-9-]+|\"[a-zA-Z0-9- ]+\") (?P<rest>.*)$')
-    #    shared_regex = re.compile('set shared (?P<rest>.*)$')
+        # dgroup_regex = re.compile('set device-group (?P<dgroup>[a-zA-sZ0-9-]+|\"[a-zA-Z0-9- ]+\") (?P<rest>.*)$')
+        # shared_regex = re.compile('set shared (?P<rest>.*)$')
         rule_regex = re.compile('(?P<rtype>[a-z-]+) security rules (?P<rname>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
         nat_regex = re.compile('(?P<rtype>[a-z-]+) nat rules (?P<rname>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z- ]+) (?P<value>.+)')
         address_regex = re.compile('address (?P<aname>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
@@ -984,7 +956,6 @@ class config():
         devices_regex = re.compile('devices (?P<device_id>[0-9 ]+)')
         template_regex = re.compile('set template (?P<tmpl>[a-zA-sZ0-9-]+|\"[a-zA-Z0-9- ]+\") (?P<rest>.*)$')
         ts_regex = re.compile('templates (?P<tmembers>.*)$')
-        interface_regex = re.compile('config +vsys vsys1 zone DMZ network layer3 ethernet1/9.253')
         interface_zone_regex = re.compile('config +vsys vsys[0-9] zone (?P<zname>[a-zA-Z0-9_-]+) network layer3 (?P<intf>.*)')
         interface_ip_regex = re.compile('config +network interface (ethernet|loopback |tunnel |aggregate-ethernet )( (?P<pintf>[a-z0-9\/]+) )?(?P<lintf>[a-z0-9\/.]+)? (?P<attr>[a-z0-9- ]+) (?P<value>[0-9a-zA-Z-.\/]+)')
         stack_regex = re.compile('set template-stack (?P<stack>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
@@ -1015,7 +986,7 @@ class config():
                 if type == 'shared':
                     r = object+' '+r
                     # print("wczytalem shared linie:", r)
-                if dg not in self.dg_obj.keys():
+                if dg not in self.devicegroups:
                     self.add_dg(dg)
                 if " security rules " in r:
                     self.rules_parser(dg, r, rule_regex, g2)
@@ -1039,7 +1010,7 @@ class config():
                     # print(rest[0:7], "<<")
                     pass
             elif type == 'template' or type == 'template-stack':
-                if object not in self.t_obj.keys():
+                if object not in self.templates:
                     self.add_t(object)
                     # print("dodaje template", object)
                 template_line_counter = template_line_counter+1
@@ -1062,7 +1033,7 @@ class config():
                 elif r[0:10] == "templates ":
                     m = ts_regex.match(r)
                     if m:
-                        self.t_obj[object]['tmembers'] = get_members(m.group('tmembers'))
+                        self.tmembers[object] = get_members(m.group('tmembers'))
                 else:
                     pass
                     print("template(-stack):", object, "line without match:", r, file=g2)
@@ -1073,7 +1044,7 @@ class config():
                 other_counter = other_counter+1
             line_counter = line_counter+1
             if line_counter > 5000000:
-                print(self.dg_obj['shared']['address'])
+                print(self.address['shared'])
                 sys.exit()
             l = handle.readline()
         g2.close()
@@ -1091,7 +1062,7 @@ def main():
     # pa.load_config_ssh()
     pa.zone_check()
     pa.address_names_check()
-    # pa.all_rules_print()
+    pa.all_rules_print()
     pa.rules_for_devices_print()
     pa.devices_ips()
     pa.object_count()
@@ -1101,9 +1072,9 @@ def main():
     # print(pa.return_service_value('gua-pa-ha', 'Softlayer-Services-1-SRV'))
     # print(pa.return_address_value('"Four Seasons"', 'LSVPN-GATEWAYS'))
     # print(pa.dg_obj['"World Sales Offices"'])
-    print(pa.return_address_value('atwso-pa-ha1', '[ "GoldLine - 172.16.116.0_24" VOIP-172.16.101.0_24 WRO-172.16.0.0_18 WRO-172.16.0.16 WRO-172.16.0.18 WRO-172.16.0.19 WRO-172.16.0.20 WRO-172.16.0.34 WRO-172.16.0.35 WRO-172.16.0.40 WRO-172.16.0.69 ]'))
-    print(pa.return_address_value('cfs-pa-ha', 'CFS-PMSDB-10.34.10.130'))
-    print(pa.return_applications('gua-pa-ha', 'BackupExectoMail-APP'))
+    # print(pa.return_address_value('atwso-pa-ha1', '[ "GoldLine - 172.16.116.0_24" VOIP-172.16.101.0_24 WRO-172.16.0.0_18 WRO-172.16.0.16 WRO-172.16.0.18 WRO-172.16.0.19 WRO-172.16.0.20 WRO-172.16.0.34 WRO-172.16.0.35 WRO-172.16.0.40 WRO-172.16.0.69 ]'))
+    # print(pa.return_address_value('cfs-pa-ha', 'CFS-PMSDB-10.34.10.130'))
+    # print(pa.return_applications('gua-pa-ha', 'BackupExectoMail-APP'))
 
 
 if __name__ == "__main__":
