@@ -670,7 +670,7 @@ class PanoramaConfig():
 
     def reverse_lex(self):
         start = time.time()
-        print('Starting object count')
+        print('Starting reverse_lex')
         f = open('I_reverse_lex.txt', 'w')
         print("{", file=f)
         for dg in self.devicegroups:
@@ -678,27 +678,27 @@ class PanoramaConfig():
                 v = self.address[dg][a]['value']
                 if v not in self.rev_address:
                     self.rev_address[v] = []
-                self.rev_address[v].append(dg+'/'+a)
+                self.rev_address[v].append(dg+'/'+a+'('+str(self.address[dg][a]['ref'])+')')
             for a in self.addressgroup[dg]:
                 v = get_members_flat(self.return_address_value(dg, a))
                 if v not in self.rev_addressgroup:
                     self.rev_addressgroup[v] = []
-                self.rev_addressgroup[v].append(dg+'/'+a)
+                self.rev_addressgroup[v].append(dg+'/'+a+'('+str(self.addressgroup[dg][a]['ref'])+')')
             for a in self.service[dg]:
                 v = get_members_flat(self.return_service_value(dg, a))
                 if v not in self.rev_service:
                     self.rev_service[v] = []
-                self.rev_service[v].append(dg+'/'+a)
+                self.rev_service[v].append(dg+'/'+a+'('+str(self.service[dg][a]['ref'])+')')
             for a in self.servicegroup[dg]:
                 v = get_members_flat(self.return_service_value(dg, a))
                 if v not in self.rev_servicegroup:
                     self.rev_servicegroup[v] = []
-                self.rev_servicegroup[v].append(dg+'/'+a)
+                self.rev_servicegroup[v].append(dg+'/'+a+'('+str(self.servicegroup[dg][a]['ref'])+')')
             for a in self.appgroup[dg]:
                 v = get_members_flat(self.return_applications(dg, a))
                 if v not in self.rev_appgroup:
                     self.rev_appgroup[v] = []
-                self.rev_appgroup[v].append(dg+'/'+a)
+                self.rev_appgroup[v].append(dg+'/'+a+'('+str(self.appgroup[dg][a]['ref'])+')')
         for a in self.rev_address:
             print('{address value:', a, 'references:', self.rev_address[a], '}', file=f)
         for a in self.rev_addressgroup:
@@ -1075,7 +1075,7 @@ class PanoramaConfig():
                 dg_line_counter = dg_line_counter+1
                 dg = (mobject if mtype == 'device-group' else 'shared')
                 if mtype == 'shared':
-                    rest = object+' '+rest
+                    rest = mobject+' '+rest
                     # print("wczytalem shared linie:", rest)
                 if dg not in self.devicegroups:
                     self.add_dg(dg)
