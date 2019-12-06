@@ -176,6 +176,7 @@ class PanoramaConfig():
         # self.zone = {}
         self.systemip = {}
         self.tmembers = {}
+        self.routes = {}
         self.variable = {}
         self.rev_address = {}
         self.rev_addressgroup = {}
@@ -209,6 +210,7 @@ class PanoramaConfig():
         self.interface_ip[t] = {}
         self.systemip[t] = {}
         self.tmembers[t] = {}
+        self.routes[t] = {}
 
     def load_config_ssh(self):
         hostname = sys.argv[1]
@@ -986,19 +988,74 @@ class PanoramaConfig():
             pass
         return None
 
-        # set template-stack KOE_Stack-2 templates [ koe-pa-ha2 KOE-Master "Hotels 3020 Shared B" "Four Seasons Shared" ]
-        # set template-stack KOE_Stack-2 settings default-vsys vsys1
-        # set template-stack KOE_Stack-2 devices 001801055503
-        # set device-group koe-pa-ha devices 001801055503
+    def zone_to_route(self, t, zone):
+        """
+        function gives a list of route destinations for the interfaces bound to zone in template t, or None
+        """
+        # self.routes[t][route] = {'interface':'','destination':'','nexthop':''}
+        if zone in self.interface_zone[t]:
+            i = get_members(self.interface_zone[t][zone])
+            if i != '':
+                if isinstance(i, list):
+                    tmp = []
+                    for j in i:
+                        for r in self.routes[t]:
+                            if self.routes[t][r]['interface'] == j:
+                                tmp.append(self.routes[t][r]['destination'])
+                    return tmp
+                tmp = []
+                for r in self.routes[t]:
+                    if self.routes[t][r]['interface'] == i:
+                        tmp.append(self.routes[t][r]['destination'])
+                return tmp
+            else:
+                pass
+                # print('interface list empty for zone', zone, 'in template', t)
+        else:
+            # print('no zone', zone, 'in template', t)
+            pass
+        return []
 
     def zone_check(self):
         start = time.time()
         file_handle = open("I_zones_interfaces_IPs.txt", 'w')
         for t in self.interface_zone:
             for z in self.interface_zone[t]:
-                print('t:', t, 'z:', z, self.zone_to_ip(t, z), file=file_handle)
+                x = self.zone_to_ip(t, z)
+                if x and x != []:
+                    print('t:', t, 'z:', z, x, file=file_handle)
         file_handle.close()
         print('zone_check completed in', time.time()-start)
+    
+    def return_zone_routes(self):
+        start = time.time()
+        file_handle = open("I_zones_routes.txt", 'w')
+        for t in self.interface_zone:
+            for z in self.interface_zone[t]:
+                x = self.zone_to_route(t, z)
+                if x != []:
+                    print('t:', t, 'z:', z, x, file=file_handle)
+        file_handle.close()
+        print('return_zone_routes completed in', time.time()-start) 
+
+    def router_parser(self, t, l, r, f):
+        # print('routes_parser: got line',l)
+        m=r.match(l)
+        if m:
+            # vr = m.group('VR')
+            route = m.group('route')
+            attr = m.group('attr')
+            value = m.group('value')
+            if t not in self.routes:
+                self.routes[t] = {}
+            if route not in self.routes[t]:
+                self.routes[t][route] = {'interface':'','destination':'','nexthop':''}
+            if attr == 'nexthop ip-address':
+                attr = 'nexthop'
+            self.routes[t][route][attr] = value
+        else:
+            pass
+        
 
     def parse_var(self, t, l, r):
         # variable $IVSCOL type ip-netmask 10.136.2.10
@@ -1049,6 +1106,8 @@ class PanoramaConfig():
         ts_regex = re.compile('templates (?P<tmembers>.*)$')
         interface_zone_regex = re.compile('config +vsys vsys[0-9] zone (?P<zname>[a-zA-Z0-9_-]+) network layer3 (?P<intf>.*)')
         interface_ip_regex = re.compile('config +network interface (ethernet|loopback |tunnel |aggregate-ethernet )( (?P<pintf>[a-z0-9\/]+) )?(?P<lintf>[a-z0-9\/.]+)? (?P<attr>[a-z0-9- ]+) (?P<value>[0-9a-zA-Z-.\/]+)')
+        #set template atwso-pa-ha1 config  network virtual-router FourSeasons routing-table ip static-route "Default Route" destination 0.0.0.0/0
+        router_regex = re.compile('config +network virtual-router (?P<VR>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") routing-table ip static-route (?P<route>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>destination|interface|nexthop ip-address) (?P<value>[0-9a-zA-Z-.\/]+)$')
         # stack_regex = re.compile('set template-stack (?P<stack>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
         var_regex = re.compile('variable $(?P<var>[a-zA-Z0-9-]+) type (?P<attr>[a-z-]+) (?P<value>.+)')
 
@@ -1109,6 +1168,8 @@ class PanoramaConfig():
                     self.template_interface_parser(mobject, rest, interface_ip_regex, g2)
                 elif "config  vsys vsys1 zone " in rest:
                     self.template_zone_parser(mobject, rest, interface_zone_regex, g2)
+                elif "config  network virtual-router " in rest:
+                    self.router_parser(mobject, rest, router_regex, g2)
                 # elif "deviceconfig system ip-address " in rest:
                 #    m = system_ip_regex.match(rest)
                 #    if m:
@@ -1153,6 +1214,7 @@ def main():
     handle.close()
     # pa.load_config_ssh()
     pa.zone_check()
+    pa.return_zone_routes()
     pa.address_names_check()
     pa.devices_ips()
     # pa.all_rules_print()
@@ -1175,6 +1237,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main_start = time.time()
+    MAIN_START = time.time()
     main()
-    print("wykonanie zajelo", time.time()-main_start)
+    print("wykonanie zajelo", time.time()-MAIN_START)
