@@ -1,15 +1,15 @@
 # ideas:
 # 1) if there is any nat rule without at least one ip allowed through it
-# 2) if there any rules with IPs not matching the zones interfaces IPs or routing through the interfaces
-# 3) if there any address objects with IP in name, and different IP in content
+# x2) if there any rules with IPs not matching the zones interfaces IPs or routing through the interfaces
+# x3) if there any address objects with IP in name, and different IP in content
 # 4) if there are rules with applications defined and "any" service
 # 5) if there are any rules without logging
 # 6) find overlapping rules
-# 7) report on real ip rules
+# x7) report on real ip rules
 # 8) packet tracer
 # 9) find vlan tags matching z in ethx/y.z
-# 10) addressgroups without usage
-# 11) addressgroups with the same content as shared
+# x10) addressgroups without usage
+# p11) addressgroups with the same content as shared
 
 # co w dg: adresy, serwisy, grupy, rulki nat i security
 # rule[dg][rulename][attr] = value
@@ -17,6 +17,9 @@
 # co w template: interfejsy, zony, vpny, routing statyczny, routing per service, logowanie, panorama, network profiles, snmp, zmienne
 # interface_zone[t][z] = lista interfejsów w template t i zone
 # interface_ip[t][intf][attr] = value
+# deviceid[device]['ts']
+# deviceid[device]['dg']
+# deviceid[device]['zone_ip'][z]
 # ipki sa przypisane do interfejsu. interfejsy sa przypisane do zony, zony sa przypisane do templatów, template-s sa przypisane do urządzeń
 # device => template-stack => template => zone => interface => ip_and_other_attributes => values
 # devicegroups -> device
@@ -26,10 +29,10 @@
 # template-stack -> templates
 
 import re
-import time
+from time import time
 import sys
-import paramiko
-
+import socket
+from netmiko import ConnectHandler
 
 # import string, re, pwd, sys, os.path, time, getopt, glob, errno
 # data structures - dictionaries:
@@ -61,6 +64,22 @@ def get_members_flat(data):
     return data
 
 
+def resolve(hostname='www.bbc.co.uk'):
+    try:
+        x = socket.gethostbyname(hostname)
+        return x
+    except socket.error:
+        return False
+
+
+def flatten(data):
+    if isinstance(data, list):
+        for element in data:
+            for j in flatten(element):
+                yield j
+    else:
+        yield data
+
 def line_split2(line):
     return re.findall("(?:\".*?\"|\S)+", line)
 
@@ -72,32 +91,48 @@ def get_ip_range(ip):
     # and it is resistant to "non-zero host part" error.
 
     if '/' in ip:
+        # print("found netmask in ",ip)
         t = ip.split('/')
+        if '.' in t[1]:
+            # wildcard! not the bit count.
+            wildcard = list(int(part) for part in t[1].split('.'))
+            start_ip = list(int(part) for part in t[0].split('.'))
+            end_ip = list(int(part) for part in t[0].split('.'))
+            for i in [0, 1, 2, 3]:
+                if wildcard[i] != 0:
+                    end_ip[i] = end_ip[i] | wildcard[i]
+                    start_ip[i] = end_ip[i] - wildcard[i]
+            return (start_ip, end_ip)
         mask = int(t[1])
         ip = t[0]
         start_ip = list(int(part) for part in ip.split('.'))
-        k = 2**((32-mask) % 8)
+        end_ip = [255, 255, 255, 255]
+        # print(start_ip)
+        k = (256 if mask in (0, 8, 16, 24) else 2**((32-mask) % 8))
+        # print(mask,k)
         if mask >= 24:
             start_ip[3] = start_ip[3]-start_ip[3] % k
-            end_ip = start_ip.copy()
+            end_ip[0] = start_ip[0]
+            end_ip[1] = start_ip[1]
+            end_ip[2] = start_ip[2]
             end_ip[3] = start_ip[3]+k-1
         elif mask >= 16:
             start_ip[3] = 0
             start_ip[2] = start_ip[2]-start_ip[2] % k
-            end_ip = start_ip.copy()
+            end_ip[0] = start_ip[0]
+            end_ip[1] = start_ip[1]
             end_ip[2] = start_ip[2]+k-1
         elif mask >= 8:
-            start_ip[3] = 0
-            start_ip[2] = 0
             start_ip[1] = start_ip[1]-start_ip[1] % k
-            end_ip = start_ip.copy()
+            start_ip[2] = 0
+            start_ip[3] = 0
+            end_ip[0] = start_ip[0]
             end_ip[1] = start_ip[1]+k-1
         else:
-            start_ip[3] = 0
-            start_ip[2] = 0
-            start_ip[1] = 0
             start_ip[0] = start_ip[0]-start_ip[0] % k
-            end_ip = start_ip.copy()
+            start_ip[1] = 0
+            start_ip[2] = 0
+            start_ip[3] = 0
             end_ip[0] = start_ip[0]+k-1
     elif '-' in ip:
         t = ip.split('-')
@@ -117,42 +152,27 @@ def is_in_range(ip1, ip2):
     # 0 - ip1 and ip2 are identical
     # 1 - ip1 is part of ip2
     # 2 - ip2 is part of ip1
-    # 3 - ip1 and ip2 are separate
-    # 4 - partial overlap
+    # 3 - partial overlap (like 10.0.0.0-10.0.0.100 and 10.0.0.50-10.0.0.150)
+    # 4 - ip1 and ip2 are separate
     # 5 - error, at least one IP has some formatting problem
 
     start_ip1, end_ip1 = get_ip_range(ip1)
     start_ip2, end_ip2 = get_ip_range(ip2)
-#    print('I have IP1 range:', start_ip1, '-:', end_ip1)
-#    print('I have IP2 range:', start_ip2, '-:', end_ip2)
+    # print('I have IP1 range:', start_ip1, '-', end_ip1)
+    # print('I have IP2 range:', start_ip2, '-', end_ip2)
 
     if start_ip1 == start_ip2:
         if end_ip1 == end_ip2: return 0
         elif end_ip1 < end_ip2: return 1
         else: return 2
     if start_ip1 < start_ip2:
-        if start_ip2 > end_ip1: return 3
+        if start_ip2 > end_ip1: return 4
         if end_ip1 >= end_ip2: return 2
-        else: return 4
+        else: return 3
     else:   # start_ip1>start_ip2
-        if start_ip1 > end_ip2: return 3
+        if start_ip1 > end_ip2: return 4
         if end_ip1 <= end_ip2: return 1
-        else: return 4
-
-
-def address_In_Network(ip, net):
-    # shamelessly copied from the stackoverflow, as my solution is much longer...
-    # for some reason using the module ipaddress from python 3 turned out to be one order of magnitude slower than this function.
-    # unfortunately, it turned out it does not work when the host part of the IP is non-zero, so it is NOT used in the main program.
-    # i left it only for reference.
-    ipaddr = struct.unpack('>L', socket.inet_aton(ip))[0]
-    netaddr, bits = net.split('/')
-    netmask = struct.unpack('>L', socket.inet_aton(netaddr))[0]
-    ipaddr_masked = ipaddr & (4294967295 << (32-int(bits)))   # Logical AND of IP address and mask will equal the network address if it matches
-    if netmask == netmask & (4294967295 << (32-int(bits))):   # Validate network address is valid for mask
-        return ipaddr_masked == netmask
-    print("***WARNING*** Network", netaddr, "not valid with mask /"+bits)
-    return ipaddr_masked == netmask
+        else: return 3
 
 
 class PanoramaConfig():
@@ -183,6 +203,9 @@ class PanoramaConfig():
         self.rev_service = {}
         self.rev_servicegroup = {}
         self.rev_appgroup = {}
+        # self.dns_available = resolve()
+        self.dns_available = False # for now
+
 
     def add_dg(self, dg):
         self.rule[dg] = {}
@@ -213,35 +236,24 @@ class PanoramaConfig():
         self.routes[t] = {}
 
     def load_config_ssh(self):
+        start = time()
         hostname = sys.argv[1]
         username = sys.argv[2]
         password = sys.argv[3]
-        try:
-            teefile = open('pano_current.txt', 'w')
-            client = paramiko.SSHClient()
-            client.load_system_host_keys()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy)
+        panorama = {'device_type': 'paloalto_panos',
+                    'host':hostname,
+                    'username': username,
+                    'password': password}
+        net_connect = ConnectHandler(**panorama)
+        output = net_connect.send_command('set cli config-output-format set')
+        output = net_connect.send_command('set cli pager off')
+        output = net_connect.send_config_set(['show'], delay_factor=20, strip_prompt=True, strip_command=True)
+        s = open('output1.txt', 'w')
+        print(output, file=s)
+        s.close()
+        net_connect.disconnect()
+        print('Completed load_config_ssh in', time()-start)
 
-            client.connect(hostname, port=22, username=username, password=password)
-            # stdin, stdout, stderr = client.exec_command('set cli config-output-format set')
-            stdin, stdout, stderr = client.exec_command('cd proclogdir/')
-            print(stdout.readlines())
-            print("what is")
-            print(stderr.readlines())
-            stdin, stdout, stderr = client.exec_command('set cli pager off')
-            print(stdout.readlines())
-            print("what is2")
-            print(stderr.readlines())
-            stdin, stdout, stderr = client.exec_command('configure')
-            print(stdout.readlines())
-            print("what is3")
-            print(stderr.readlines())
-            stdin, stdout, stderr = client.exec_command('show')
-            text = stdout.readlines()
-            print(text, file=teefile)
-        finally:
-            client.close()
-            teefile.close()
 
     def rules_parser(self, dg, line, regex, g):
         # g = open('W_unmatched_lines', 'a')
@@ -393,7 +405,7 @@ class PanoramaConfig():
             else:
                 agrpmembers = match.group('data')
             # print("dg:",dg,"matched line:", line, "found name", agrp, 'attr', attr, "with members", agrpmembers)
-            # print (self.appgroup)
+            # print(self.appgroup)
             if agrp not in self.dg_inv[dg]['appgroups']:
                 self.dg_inv[dg]['appgroups'].add(agrp)
             if agrp not in self.appgroup[dg]:
@@ -428,6 +440,14 @@ class PanoramaConfig():
                 self.service[dg][sname] = {}
                 self.service[dg][sname]['ref'] = 0
             # print(self.service[dg][sname])
+            if attr == 'source-port':
+                file_handle = open('E_service_broken', 'a')
+                if value == '1024-65535' or value == '1-65535':
+                    print('source port definition', value, 'for', dg, sname, 'seems redundant', file=file_handle)
+                else:
+                    print('source port definition', value, 'for', dg, sname, 'seems very suspicious:', value, file=file_handle)
+                file_handle.close()
+            # todo: napisać test czy source port nie jest pojedyńczy
             if attr not in self.service[dg][sname]:
                 self.service[dg][sname][attr] = value
                 if proto is not None:
@@ -464,7 +484,7 @@ class PanoramaConfig():
         else:
             print("srvgroup_parser: unmatched line", dg, line)
 
-    def devices_parser(self, dg, t, line, regex):
+    def devices_parser(self, dg, ts, line, regex):
         # regex = devices (?P<device_id>[0-9]+)
         match = regex.match(line)
         if match:
@@ -475,30 +495,39 @@ class PanoramaConfig():
                     if m not in self.deviceid:
                         self.deviceid[m] = {}
                         self.deviceid[m]['dg'] = {}
-                        self.deviceid[m]['t'] = {}
+                        self.deviceid[m]['ts'] = {}
                     if dg != '':
                         self.deviceid[m]['dg'].append(dg)
-                    if t != '':
-                        self.deviceid[m]['t'].append(t)
+                    if ts != '':
+                        self.deviceid[m]['ts'].append(ts)
             else:
                 if device_id[-1] == ' ':
                     device_id = device_id[:-1]
                 if device_id not in self.deviceid:
                     self.deviceid[device_id] = {}
                     self.deviceid[device_id]['dg'] = []
-                    self.deviceid[device_id]['t'] = []
+                    self.deviceid[device_id]['ts'] = []
                 if dg != '':
                     self.deviceid[device_id]['dg'].append(dg)
                     # print('adding', device_id, 'to dg', dg)
-                if t != '':
-                    self.deviceid[device_id]['t'].append(t)
-                    # print('adding', device_id, 'to t', t)
+                if ts != '':
+                    self.deviceid[device_id]['ts'].append(ts)
+                    # print('adding', device_id, 'to ts', ts)
         else:
             print('devices_parser error! dg:', dg, 'l:', line)
 
+    def print_devices_membership(self):
+        start = time()
+        f = open('I_devices_membership.txt', 'w')
+        for d in self.deviceid:
+            for ts in self.deviceid[d]['ts']:
+                print("device:", d, 'dg:', self.deviceid[d]['dg'], 'ts:', ts, 't:', self.tmembers[ts], file=f)
+        f.close()
+        print('Completed print_devices_membership in', time()-start)
+
     def address_names_check(self):
         # self.address[dg][qaname][qattr] = qvalue
-        start = time.time()
+        start = time()
         print('Starting address_names_check')
         f = open('W_mismatch_name_and_content', 'w')
         name_regex = re.compile('\"?(?P<zero>[a-zA-Z0-9_ -]*[-_ ])?(?P<first>[0-9]+)[.-](?P<second>[0-9]+)[.-](?P<third>[0-9]+)[.-](?P<fourth>[0-9]+)[_-]?(?P<mask>[0-9]*)?.*\"?')
@@ -529,11 +558,11 @@ class PanoramaConfig():
                                 # print("W:Something is not matched, please check")
                                 print("W: DG:", dg, "addr:", obj, "octets:", match.group('first'),
                                       match.group('second'), match.group('third'),
-                                      match.group('fourth'), "mask:", mask1, file=f)
-                                print("W: found ip netmask:", ip_value, "octets:",
-                                      match2.group('first'), match2.group('second'),
-                                      match2.group('third'), match2.group('fourth'),
-                                      "with netmask", mask2, file=f)
+                                      match.group('fourth'), "mask:", mask1, "content:", ip_value, "mask2:", mask2, file=f)
+                                # print("W: found ip netmask:", ip_value, "octets:",
+                                #      match2.group('first'), match2.group('second'),
+                                #      match2.group('third'), match2.group('fourth'),
+                                #      "with netmask", mask2, file=f)
                         else:
                             print("I: DG:", dg, "found ip netmask, but the name", obj,
                                   "does not match IP, object is ", ip_value, file=f)
@@ -596,7 +625,7 @@ class PanoramaConfig():
                 else:
                     print("E: not match for IP - DG:", dg, "addr:", obj)
         f.close()
-        print('Completed address_names_check in', time.time()-start)
+        print('Completed address_names_check in', time()-start)
 
     def return_address_value(self, dg, obj):
         """
@@ -641,7 +670,7 @@ class PanoramaConfig():
         return what   # = return 'any' or just name of the object
 
     def object_count(self):
-        start = time.time()
+        start = time()
         print('Starting object count')
         f = open('I_object_count.txt', 'w')
         for dg in self.devicegroups:
@@ -668,10 +697,10 @@ class PanoramaConfig():
             print('\t] }', file=f)
             print('}', file=f)
         f.close()
-        print('Completed object_count in', time.time()-start)
+        print('Completed object_count in', time()-start)
 
     def reverse_lex(self):
-        start = time.time()
+        start = time()
         print('Starting reverse_lex')
         f = open('I_reverse_lex.txt', 'w')
         print("{", file=f)
@@ -712,7 +741,7 @@ class PanoramaConfig():
         for a in self.rev_appgroup:
             print('{address value:', a, 'references:', self.rev_appgroup[a], '}', file=f)
         f.close()
-        print('Completed reverse_lex in', time.time()-start)
+        print('Completed reverse_lex in', time()-start)
 
     def return_service_value(self, dg, obj):
         a = get_members(obj)
@@ -788,22 +817,22 @@ class PanoramaConfig():
     def devices_ips(self):
         print('Starting devices_ips')
         f = open('I_devices_IPs.txt', 'w')
-        start = time.time()
+        start = time()
         for d in self.deviceid:
             self.deviceid[d]['zone_ip'] = {}
             self.deviceid[d]['zone_ref'] = {}
-            for t in self.deviceid[d]['t']:
-                # print('D:', d, 't:', t)
-                for z in self.interface_zone[t]:
-                    # print('D:', d, 't:', t, 'z:', z)
-                    x = self.zone_to_ip(t, z)
+            for ts in self.deviceid[d]['ts']:
+                # print('D:', d, 't:', ts)
+                for z in self.interface_zone[ts]:
+                    # print('D:', d, 'ts:', ts, 'z:', z)
+                    x = self.zone_to_ip(ts, z)
                     self.deviceid[d]['zone_ip'][z] = []
                     self.deviceid[d]['zone_ref'][z] = 0
                     # print(x)
                     if x:
                         self.deviceid[d]['zone_ip'][z].append(x)
-                # print("checking tmembers for",t,'are',self.tmembers[t])
-                for t2 in self.tmembers[t]:
+                # print("checking tmembers for",ts,'are',self.tmembers[t])
+                for t2 in self.tmembers[ts]:
                     for z in self.interface_zone[t2]:
                         if z not in self.deviceid[d]['zone_ip']:
                             self.deviceid[d]['zone_ip'][z] = []
@@ -818,25 +847,32 @@ class PanoramaConfig():
                                 self.deviceid[d]['zone_ip'][z].append(x)
             print('Device:', d, 'IPs:', self.deviceid[d]['zone_ip'], file=f)
         f.close()
-        print('Completed devices_ips in', time.time()-start)
+        print('Completed devices_ips in', time()-start)
 
     def all_rules_print(self):
+        """
+        prints unrolled security rules, regardless, if they are assigned to some device. 
+        not used any more. 
+        """
         # self.rule[dg][rname][attr] = value
-        start = time.time()
+        start = time()
         print('Starting all rules_print')
         f = open('I_rules.txt', 'w')
         for dg in self.devicegroups:
             # print('dg:', dg)
             self.rules_for_dg(dg, f)
         f.close()
-        print('Completed all_rules_print in', time.time()-start)
+        print('Completed all_rules_print in', time()-start)
 
-    def rules_for_dg(self, dg, filehandle, device=None):
+    def rules_for_dg(self, dg, filehandle, filehandle2, device=None):
         """
         prints unrolled rule for specific devicegroup
         if device is given, it is matched to template so the zone IPs
         can also be unrolled. 
+        TODO: it needs to be split into separate functions, it's too big now. 
         """
+        fqdn_file = open("I_fqdn_objects", "a")
+        bad_rules_file = open("E_bad_rules", "a")
         for rule in self.rule[dg]:
             try:
                 fzones = get_members(self.rule[dg][rule]['from'])
@@ -857,18 +893,114 @@ class PanoramaConfig():
                 # print('dg:', dg, 'rule:', rule, 'from zones:', fzones, 'tzones:',tzones)
                 if isinstance(fzones, list):
                     for fz in fzones:
-                        if fz in self.deviceid[device]['zone_ip']:
-                            fzoneIPs.append(self.deviceid[device]['zone_ip'][fz])
-                elif fzones in self.deviceid[device]['zone_ip']:
-                    fzoneIPs.append(self.deviceid[device]['zone_ip'][fzones])
+                        zoneIPs = []
+                        #if fz in self.deviceid[device]['zone_ip']:
+                        #    ip1 = self.deviceid[device]['zone_ip'][fz]
+                        #    if ip1 != [] and ip1 is not None:
+                        #        fzoneIPs.append(ip1)
+                        for ts in self.deviceid[device]['ts']:
+                            for t in self.tmembers[ts]:
+                                ip1 = self.zone_to_ip(t, fz)
+                                if ip1 != [] and ip1 is not None:
+                                    fzoneIPs.append(ip1)
+                                    zoneIPs.append(ip1)
+                                ip1 = self.zone_to_route(t, fz)
+                                if ip1 != [] and ip1 is not None:
+                                    fzoneIPs.append(ip1)
+                                    zoneIPs.append(ip1)
+                        if zoneIPs == []:
+                            print('WARN: source zone used in rule is without IPs! dg:', dg, 'rule:', rule, 'src zone:', fz, file=filehandle2)
+                else:
+                    #if fzones in self.deviceid[device]['zone_ip']:
+                    #fzoneIPs.append(self.deviceid[device]['zone_ip'][fzones])
+                    for ts in self.deviceid[device]['ts']:
+                        for t in self.tmembers[ts]:
+                            ip1 = self.zone_to_ip(t, fzones)
+                            if ip1 != [] and ip1 is not None:
+                                fzoneIPs.append(ip1)
+                            ip1 = self.zone_to_route(t, fzones)
+                            if ip1 != [] and ip1 is not None:
+                                fzoneIPs.append(ip1)
+                    if fzoneIPs == []:
+                        print('WARN: source zone used in rule is without IPs! dg:', dg, 'rule:', rule, 'src zone:', fzones, file=filehandle2)
                 tzoneIPs = []
                 # print(tzones)
                 if isinstance(tzones, list):
                     for tz in tzones:
-                        if tz in self.deviceid[device]['zone_ip']:
-                            tzoneIPs.append(self.deviceid[device]['zone_ip'][tz])
-                elif tzones in self.deviceid[device]['zone_ip']:
-                    tzoneIPs.append(self.deviceid[device]['zone_ip'][tzones])
+                        zoneIPs = []
+                        for ts in self.deviceid[device]['ts']:
+                            for t in self.tmembers[ts]:
+                                ip1 = self.zone_to_ip(t, tz)
+                                if ip1 != [] and ip1 is not None:
+                                    tzoneIPs.append(ip1)
+                                    zoneIPs.append(ip1)
+                                ip1 = self.zone_to_route(t, tz)
+                                if ip1 != [] and ip1 is not None:
+                                    tzoneIPs.append(ip1)
+                                    zoneIPs.append(ip1)
+                        if zoneIPs == []:
+                            print('WARN: dest zone used in rule is without IPs! dg:', dg, 'rule:', rule, 'dst zone:', tz, file=filehandle2)
+                        #if tz in self.deviceid[device]['zone_ip']:
+                        #    tmp2 = self.deviceid[device]['zone_ip'][tz]
+                        #    if tmp2 != []:
+                        #        tzoneIPs.append(tmp2)
+                else:
+                    #if tzones in self.deviceid[device]['zone_ip'] and self.deviceid[device]['zone_ip'][tzones] != []:
+                    #tzoneIPs.append(self.deviceid[device]['zone_ip'][tzones])
+                    for ts in self.deviceid[device]['ts']:
+                        for t in self.tmembers[ts]:
+                            ip1 = self.zone_to_ip(t, tzones)
+                            if ip1 != [] and ip1 is not None:
+                                tzoneIPs.append(ip1)
+                            ip1 = self.zone_to_route(t, tzones)
+                            if ip1 != [] and ip1 is not None:
+                                tzoneIPs.append(ip1)
+                    if tzoneIPs == []:
+                        print('WARN: dest zone used in rule is without IPs! dg:', dg, 'rule:', rule, 'dst zone:', tzones, file=filehandle2)
+                # print('{ dg:', dg, ', rule:', rule, ', from zones:', fzones, ', zone IPs:',
+                #      fzoneIPs, ', to zones:', tzones, ', zone IPs:', tzoneIPs, ', type:', rtype,
+                #      ', source:', source, ', destination', destination, ', action:', action)
+                for s in flatten(source):
+                    # print("checking src",s)
+                    if s[-1] not in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
+                        if not self.dns_available or s == "any":
+                            continue
+                        s_ip = resolve(s)
+                        if not s_ip:
+                            print("resolving source:", s, 'FAILED', file=fqdn_file)
+                            continue
+                        else:
+                            print('resolved source:', s, 'to:', s_ip, file=fqdn_file)
+                            s = s_ip
+                    matched = 0
+                    for fips in flatten(fzoneIPs):
+                        if fips == "any":
+                            continue
+                        cmp = is_in_range(s, fips)
+                        if cmp <= 3:
+                            matched = matched + 1
+                    if matched == 0:
+                        print("WARN: source", s, "is not in zones nor routes for rule: dg:", dg, ', rule:', rule, "zone IPs:", fzoneIPs, file=bad_rules_file)
+                for s in flatten(destination):
+                    if s[-1] not in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
+                        if not self.dns_available or s == "any":
+                            continue
+                        s_ip = resolve(s)
+                        if not s_ip:
+                            print("resolving dest:", s, 'FAILED', file=fqdn_file)
+                            continue
+                        else:
+                            print('resolved dest:', s, 'to:', s_ip, file=fqdn_file)
+                            s = s_ip
+                    matched = 0
+                    for tips in flatten(tzoneIPs):
+                        if tips == "any":
+                            continue
+                        cmp = is_in_range(s, tips)
+                        if cmp <= 3:
+                            matched = matched + 1
+                    if matched == 0:
+                        print("WARN: destination", s, "is not in zones nor routes for rule: dg:", dg, ', rule:', rule, "zone IPs:", tzoneIPs, file=bad_rules_file)
                 print('{ dg:', dg, ', rule:', rule, ', from zones:', fzones, ', zone IPs:',
                       fzoneIPs, ', to zones:', tzones, ', zone IPs:', tzoneIPs, ', type:', rtype,
                       ', source:', source, ', destination', destination, ', action:', action,
@@ -877,6 +1009,8 @@ class PanoramaConfig():
                 print('{ dg:', dg, ', rule:', rule, ', from zones:', fzones, ', to zones:',
                       tzones, ', type:', rtype, ', source:', source, ', destination', destination,
                       ', action:', action, ', service:', services, ', application', applications, '}', file=filehandle)
+        bad_rules_file.close()
+        fqdn_file.close()
         if dg != 'shared':
             self.rules_for_dg(self.parent[dg], filehandle, device)
 
@@ -885,32 +1019,31 @@ class PanoramaConfig():
         Prints all rules for detected devices in unrolled form (IP numbers, port numbers, etc.)
         """
         f = open('I_rules2.txt', 'w')
-        start = time.time()
+        g = open('W_rules_with_empty_zones', 'w')
+        start = time()
         print('Starting rules_for_devices_print')
         for d in self.deviceid:
             print(' { device:', d, file=f)
             for dg in self.deviceid[d]['dg']:
                 # print('device', d, 'is assigned to DG:', dg, 'parent:', self.dg_obj[d2]['parent-dg'], 'and t:', devices_id[d]['t'])
-                self.rules_for_dg(dg, f, d)
+                self.rules_for_dg(dg, f, g, d)
             print('}', file=f)
+        g.close()
         f.close()
-        print('Completed rules_print in', time.time()-start)
+        print('Completed rules_print in', time()-start)
 
     def template_interface_parser(self, t, line, regex, h):
-        line = re.sub('layer3 ', '', line)
-        line = re.sub('units ', '', line)
-        # print("template_interface_parser: dostalem linie", line)
+        # line = re.sub('layer3 ', '', line)
+        # line = re.sub('units ', '', line)
+        # print("template_interface_parser: t:",t, line)
         match = regex.match(line)
         if match:
             attr = match.group('attr')
             value = match.group('value')
-            if match.group('lintf') is None:
-                if match.group('pintf') is None:
-                    print('no interface detected, t:', t, '>', line)
-                    return
-                intf = match.group('pintf')
-            else:
-                intf = match.group('lintf')
+            intf = match.group('intf')
+            if intf is None:
+                print('no interface detected, t:', t, '>', line)
+                return
             if attr is None or value is None:
                 print('template_interface_parser:', t, 'cannot properly parse line >', line)
                 return
@@ -918,6 +1051,8 @@ class PanoramaConfig():
                 self.interface_ip[t][intf] = {}
             if attr not in self.interface_ip[t][intf]:
                 self.interface_ip[t][intf][attr] = value
+                # if attr == ""
+                # print("adding t:",t,"intf:",intf,"attr:",attr,"val:",value,)
             elif self.interface_ip[t][intf][attr] != value:
                 print("E: template interface conflict? t = ", t, "intf = ", intf, "attr = ", attr, "old value = ", self.interface_ip[t][intf][attr], "new value = ", value)
         else:
@@ -955,7 +1090,7 @@ class PanoramaConfig():
 
     def zone_to_ip(self, t, zone):
         """
-        function gives a list of IPs for the interfaces bound to zone in template t, or None
+        function gives a list of IPs for the interfaces bound to zone in template t, or empty list [] or None
         """
         if zone in self.interface_zone[t]:
             i = get_members(self.interface_zone[t][zone])
@@ -964,7 +1099,7 @@ class PanoramaConfig():
                     tmp = []
                     for j in i:
                         if j not in self.interface_ip[t]:
-                            # print ("t:",t,"interface:",j,"is in zone",zone,"but has no IP")
+                            # print("t:",t,"interface:",j,"is in zone",zone,"but has no IP")
                             pass
                         elif 'ip' in self.interface_ip[t][j]:
                             tmp.append(self.interface_ip[t][j]['ip'])
@@ -973,7 +1108,7 @@ class PanoramaConfig():
                             # print('t:', t, 'z:', zone, 'i:', i, 'member:',j, 'no ip')
                     return tmp
                 if i not in self.interface_ip[t]:
-                    # print ("t:",t,"interface:",i,"is in zone",zone,"but has no IP")
+                    # print("t:",t,"interface:",i,"is in zone",zone,"but has no IP")
                     pass
                 elif 'ip' in self.interface_ip[t][i]:
                     return self.interface_ip[t][i]['ip']
@@ -1017,7 +1152,7 @@ class PanoramaConfig():
         return []
 
     def zone_check(self):
-        start = time.time()
+        start = time()
         file_handle = open("I_zones_interfaces_IPs.txt", 'w')
         for t in self.interface_zone:
             for z in self.interface_zone[t]:
@@ -1025,10 +1160,10 @@ class PanoramaConfig():
                 if x and x != []:
                     print('t:', t, 'z:', z, x, file=file_handle)
         file_handle.close()
-        print('zone_check completed in', time.time()-start)
-    
+        print('zone_check completed in', time()-start)
+
     def return_zone_routes(self):
-        start = time.time()
+        start = time()
         file_handle = open("I_zones_routes.txt", 'w')
         for t in self.interface_zone:
             for z in self.interface_zone[t]:
@@ -1036,11 +1171,11 @@ class PanoramaConfig():
                 if x != []:
                     print('t:', t, 'z:', z, x, file=file_handle)
         file_handle.close()
-        print('return_zone_routes completed in', time.time()-start) 
+        print('return_zone_routes completed in', time()-start)
 
     def router_parser(self, t, l, r, f):
         # print('routes_parser: got line',l)
-        m=r.match(l)
+        m = r.match(l)
         if m:
             # vr = m.group('VR')
             route = m.group('route')
@@ -1049,13 +1184,44 @@ class PanoramaConfig():
             if t not in self.routes:
                 self.routes[t] = {}
             if route not in self.routes[t]:
-                self.routes[t][route] = {'interface':'','destination':'','nexthop':''}
+                self.routes[t][route] = {'interface':'', 'destination':'', 'nexthop':''}
             if attr == 'nexthop ip-address':
                 attr = 'nexthop'
             self.routes[t][route][attr] = value
         else:
             pass
-        
+
+    def check_routes(self):
+        """
+        Function checks if routes defined have nexthop, and if this nexthop is within IP range defined on the outgoing interface
+        """
+        file_handle = open("W_routes_errors.txt", 'w')
+        for t in self.templates:
+            for r in self.routes[t]:
+                i = self.routes[t][r]['interface']
+                if "tunnel" in i:
+                    continue
+                nh = self.routes[t][r]['nexthop']
+                if nh == '':
+                    print('WARN: route without nexthop defined, t:', t, 'r:', r, 'i:', i, file=file_handle)
+                    continue
+                if i != '':
+                    # print('checking route. t:',t,'r:',r,'i:',i,'nh:',nh)
+                    try:
+                        ip = self.interface_ip[t][i]['ip']
+                    except KeyError:
+                        ip = ''
+                    if ip == '':
+                        print('WARN: route without interface IP! t:', t, 'r:', r, 'i:', i, 'nh:', nh, file=file_handle)
+                    else:
+                        a = is_in_range(ip, nh)
+                        if a == 2:
+                            pass
+                            # print('route OK. t:',t,'r:',r,'i:',i,'ip:',ip,'nh:',nh)
+                        else:
+                            print('WARN: route next hop doesnt match interface ip. t:', t, 'r:', r, 'i:', i, 'ip:', ip, 'nh:', nh, file=file_handle)
+        file_handle.close()
+
 
     def parse_var(self, t, l, r):
         # variable $IVSCOL type ip-netmask 10.136.2.10
@@ -1105,13 +1271,14 @@ class PanoramaConfig():
         # template_regex = re.compile('set template (?P<tmpl>[a-zA-sZ0-9-]+|\"[a-zA-Z0-9- ]+\") (?P<rest>.*)$')
         ts_regex = re.compile('templates (?P<tmembers>.*)$')
         interface_zone_regex = re.compile('config +vsys vsys[0-9] zone (?P<zname>[a-zA-Z0-9_-]+) network layer3 (?P<intf>.*)')
-        interface_ip_regex = re.compile('config +network interface (ethernet|loopback |tunnel |aggregate-ethernet )( (?P<pintf>[a-z0-9\/]+) )?(?P<lintf>[a-z0-9\/.]+)? (?P<attr>[a-z0-9- ]+) (?P<value>[0-9a-zA-Z-.\/]+)')
-        #set template atwso-pa-ha1 config  network virtual-router FourSeasons routing-table ip static-route "Default Route" destination 0.0.0.0/0
+        interface_ip_regex = re.compile('config +network interface .*(?P<intf>(ae|ethernet|vlan|tunnel|loopback)[./0-9]*) (layer3 )?(units )?(?P<attr>[a-z0-9- ]+) (?P<value>[0-9a-zA-Z-_.\/]+|\"[a-zA-Z0-9- ._]+\")')
+        # gregex = re.compile(r'config\s+network\s+interface\s+(?P<_hasUnits>(?=.*\bunits\b))?(?(_hasUnits).*?units\s+|)(?P<intf>\S+)\s+(?P<attr>\S+(\s+\S+)*)\s+(?P<_Vciap>")?(?P<value>(?(_Vciap)[^"]+|\S+))(?(_Vciap)"|)\s*$')
+        # set template atwso-pa-ha1 config  network virtual-router FourSeasons routing-table ip static-route "Default Route" destination 0.0.0.0/0
         router_regex = re.compile('config +network virtual-router (?P<VR>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") routing-table ip static-route (?P<route>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>destination|interface|nexthop ip-address) (?P<value>[0-9a-zA-Z-.\/]+)$')
         # stack_regex = re.compile('set template-stack (?P<stack>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
         var_regex = re.compile('variable $(?P<var>[a-zA-Z0-9-]+) type (?P<attr>[a-z-]+) (?P<value>.+)')
 
-        start = time.time()
+        start = time()
         print('Starting main parser')
         self.add_dg('shared')
         g2 = open('W_unmatched_lines', 'a')
@@ -1200,7 +1367,7 @@ class PanoramaConfig():
                 sys.exit()
             line = handle.readline()
         g2.close()
-        print('Completed main parser in', time.time()-start)
+        print('Completed main parser in', time()-start)
         # print(self.dg_obj)
         print("wczytalem", line_counter, " linii, z czego ", dg_line_counter, 'to devicegroups, ', rule_counter, "przypada na regulki, ", template_line_counter, "na template a ", other_counter, " na inne")
         print("znalazlem", len(self.devicegroups), "device groups", len(self.templates), "templates")
@@ -1208,24 +1375,29 @@ class PanoramaConfig():
 
 def main():
     pa = PanoramaConfig()
-    filename = "pano_28.log"
+    # print(is_in_range('4.15.115.26/22','0.0.0.0/0'))
+    # pa.load_config_ssh()
+    # print(get_ip_range('10.16.13.1/0.255.0.0'))
+    # sys.exit()
+    filename = "pano_current.txt"
     handle = open(filename, 'r')
     pa.set_format_parser(handle)
     handle.close()
-    # pa.load_config_ssh()
     pa.zone_check()
     pa.return_zone_routes()
     pa.address_names_check()
     pa.devices_ips()
     # pa.all_rules_print()
     pa.rules_for_devices_print()
+    pa.check_routes()
     pa.object_count()
     pa.reverse_lex()
-
+    pa.print_devices_membership()
     # misc tests:
     # print(pa.deviceid['001801055525'])
     # print(pa.tmembers['APL_Stack-2'])
     # print(pa.deviceid['012801055353']['zone_ip']['Untrust'])
+    # print(pa.interface_ip["aws-pa-1-Dublin"])
     # print(pa.dg_obj['shared']['address']['Panorama-ELK_204.13.202.249'])
     # print(pa.return_service_value('atwso-pa-ha1', 'TCP-8006-8010'))
     # print(pa.return_service_value('gua-pa-ha', 'Softlayer-Services-1-SRV'))
@@ -1237,6 +1409,6 @@ def main():
 
 
 if __name__ == "__main__":
-    MAIN_START = time.time()
+    MAIN_START = time()
     main()
-    print("wykonanie zajelo", time.time()-MAIN_START)
+    print("wykonanie zajelo", time()-MAIN_START)
