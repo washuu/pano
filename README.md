@@ -1,6 +1,8 @@
 # pano
 Panorama configuration analyzer. Requires either access to panorama via SSH, or just plain text file with config in "set" output format, by default pano_current.txt. The project is in about 60% of progress. 
 
+Input parameters are optional: IP address of Panorama, username and password. 
+
 The output is either to the console (mostly warninsg and errors about the script istelf), or to the files. 
 
 Most important files are: 
