@@ -1,11 +1,12 @@
 # pano
-Panorama configuration analyzer. Requires either access to panorama via SSH, or just plain text file with config in "set" output format, by default pano_current.txt. The project is in about 60% of progress. 
+Panorama configuration analyzer. Requires either access to panorama via SSH, or just plain text file with config in "set" output format, by default pano_current.txt. The project is in about 60% of progress, altough here should be the last WORKING script (completing work, with all errors captured). 
 
 Input parameters are optional: IP address of Panorama, username and password. 
 
-The output is either to the console (mostly warninsg and errors about the script istelf), or to the files. 
+The output is either to the console (mostly warnings and errors about the script itself), or to the files. 
 
-Most important files are: 
+
+Most important output files are: 
 
 I_reverse_lex.txt - reverse dictionary. IPs, hostnames, and their related object names, count of references in brackets. Useful for finding duplicates. 
 
