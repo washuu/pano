@@ -39,4 +39,4 @@ E_services_broken - services with source ports different than 1024:65535. 99% of
 E_rules_with_missing_attributes.txt - rules with some atributes missing, like containing no sources (not "any"!) or no service. 
 
 
-More to come. 
+More to come soon. 
