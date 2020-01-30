@@ -87,17 +87,17 @@ def line_split2(line):
 
 
 def get_ip_range(ip):
-    # function expects argument in form a.b.c.d[-e.f.g.h|/x|/w.x.y.z], (single IP, range, bitcount or wildcard) as text.
+    # function expects argument in form a.b.c.d[-e.f.g.h|/x|/w.x.y.z],
+    # (single IP, range, bitcount or wildcard) as text.
     # returns two lists of numeric octets, respectively for first and last IP for the range.
     # alhough it looks clumsy, it's actually faster than many other implementations,
     # and it is resistant to "non-zero host part" error.
-    # It should be even more optimized, as for 4s Panorama, it's executed almost 9M times, and the execution time is too long.
 
     if '/' in ip:
         # bitcount or wildcard
         t = ip.split('/')
         if '.' in t[1]:
-            # wildcard! 
+            # wildcard!
             wildcard = list(int(part) for part in t[1].split('.'))
             start_ip = list(int(part) for part in t[0].split('.'))
             end_ip = list(int(part) for part in t[0].split('.'))
@@ -150,37 +150,18 @@ def get_ip_range(ip):
     return (start_ip, end_ip)
 
 def compare_ranges(ip1, ip2):
+    """
+    function expects both arguments in form ([a,b,c,d],[e,f,g,h]), as text.
+    exit codes:
+    0 - ip1 and ip2 are identical
+    1 - ip1 is part of ip2
+    2 - ip2 is part of ip1
+    3 - partial overlap (like 10.0.0.0-10.0.0.100 and 10.0.0.50-10.0.0.150)
+    4 - ip1 and ip2 are separate
+    5 - error, at least one IP has some formatting problem
+    """
     start_ip1, end_ip1 = (ip1)
     start_ip2, end_ip2 = (ip2)
-    # print('I have IP1 range:', start_ip1, '-', end_ip1)
-    # print('I have IP2 range:', start_ip2, '-', end_ip2)
-
-    if start_ip1 == start_ip2:
-        if end_ip1 == end_ip2: return 0
-        elif end_ip1 < end_ip2: return 1
-        else: return 2
-    if start_ip1 < start_ip2:
-        if start_ip2 > end_ip1: return 4
-        if end_ip1 >= end_ip2: return 2
-        else: return 3
-    else:   # start_ip1>start_ip2
-        if start_ip1 > end_ip2: return 4
-        if end_ip1 <= end_ip2: return 1
-        else: return 3
-
-
-def is_in_range2(ip1, ip2):
-    # function expects both arguments in form a.b.c.d[/x|-e.f.g.h], as text.
-    # exit codes:
-    # 0 - ip1 and ip2 are identical
-    # 1 - ip1 is part of ip2
-    # 2 - ip2 is part of ip1
-    # 3 - partial overlap (like 10.0.0.0-10.0.0.100 and 10.0.0.50-10.0.0.150)
-    # 4 - ip1 and ip2 are separate
-    # 5 - error, at least one IP has some formatting problem
-
-    start_ip1, end_ip1 = get_ip_range(ip1)
-    start_ip2, end_ip2 = get_ip_range(ip2)
     # print('I have IP1 range:', start_ip1, '-', end_ip1)
     # print('I have IP2 range:', start_ip2, '-', end_ip2)
 
@@ -255,13 +236,13 @@ class PanoramaConfig():
 
     def files_reset(self):
         files = ['W_unmatched_lines', 'W_missing_attribute', 'E_service_broken', 'W_unmatched_lines',
-        'I_devices_membership.txt', 'W_mismatch_name_and_content', 'I_object_count.txt', 'I_reverse_lex.txt', 
-        'I_devices_IPs.txt', 'I_rules.txt', "I_fqdn_objects", "E_bad_rules", 'E_rules_with_missing_attributes.txt', 
-        'I_rules2.txt', 'W_rules_with_empty_zones', "I_zones_interfaces_IPs.txt", "I_zones_routes.txt", 
-        "W_routes_errors.txt", 'W_unmatched_lines']
-        for f in files: 
-            h = open(f,"w")
-            h.close()
+                 'I_devices_membership.txt', 'W_mismatch_name_and_content', 'I_object_count.txt',
+                 'I_reverse_lex.txt', 'I_devices_IPs.txt', 'I_rules.txt', "I_fqdn_objects",
+                 "E_bad_rules", 'E_rules_with_missing_attributes.txt', 'I_rules2.txt',
+                 'W_rules_with_empty_zones', "I_zones_interfaces_IPs.txt", "I_zones_routes.txt",
+                 "W_routes_errors.txt", 'W_unmatched_lines']
+        for f in files:
+            open(f, "w").close()
 
     def add_t(self, t):
         self.templates.add(t)
@@ -399,10 +380,10 @@ class PanoramaConfig():
                 if qattr == "fqdn" and self.dns_available:
                     s_ip = resolve(qvalue)
                     if not s_ip:
-                        print("resolving source:", dg,'/', s, 'FAILED', file=fqdn_file)
+                        print("resolving source:", dg, '/', qaname, 'FAILED', file=fqdn_file)
                     else:
-                        print('resolved source:', dg, '/', s, 'to:', s_ip, file=fqdn_file)
-                        fqdn[qvalue] = s_ip
+                        print('resolved source:', dg, '/', qaname, 'to:', s_ip, file=fqdn_file)
+                        self.fqdn[qvalue] = s_ip
                         if s_ip not in self.start_end_ips:
                             self.start_end_ips[s_ip] = get_ip_range(s_ip)
                 if qattr != 'fqdn' and qaname not in self.start_end_ips:
@@ -699,23 +680,21 @@ class PanoramaConfig():
             return tmp
         if what == 'any':
             return "0.0.0.0/0"
-        else:
-            # print('I have single object:', what)
-            if what in self.address[dg]:
-                self.address[dg][what]['ref'] = self.address[dg][what]['ref']+1
-                return self.address[dg][what]['value']
-
-            if what in self.addressgroup[dg]:
-                self.addressgroup[dg][what]['ref'] = self.addressgroup[dg][what]['ref']+1
-                tmp = []
-                for m in self.addressgroup[dg][what]['members']:
-                    if m != ']' and m != '[':
-                        tmp.append(self.return_address_value(dg, m))
-                return tmp
-            if dg != 'shared':
-                # print('did not find in', dg, 'going to:', self.parent[dg])
-                return self.return_address_value(self.parent[dg], what)
-            # print("address", obj, 'in dg', dg, 'is not defined, assuming plain IP')
+        # print('I have single object:', what)
+        if what in self.address[dg]:
+            self.address[dg][what]['ref'] = self.address[dg][what]['ref']+1
+            return self.address[dg][what]['value']
+        if what in self.addressgroup[dg]:
+            self.addressgroup[dg][what]['ref'] = self.addressgroup[dg][what]['ref']+1
+            tmp = []
+            for m in self.addressgroup[dg][what]['members']:
+                if m != ']' and m != '[':
+                    tmp.append(self.return_address_value(dg, m))
+            return tmp
+        if dg != 'shared':
+            # print('did not find in', dg, 'going to:', self.parent[dg])
+            return self.return_address_value(self.parent[dg], what)
+        # print("address", obj, 'in dg', dg, 'is not defined, assuming plain IP')
         if what not in self.start_end_ips:
             self.start_end_ips[what] = get_ip_range(what)
         return what   # = return just name of the object
@@ -849,7 +828,7 @@ class PanoramaConfig():
                     # print("Error in appgroup", a, "could not find", b, "adding name")
                     tmp.append(b)
             return tmp
-        elif a != 'any':
+        if a != 'any':
             # print('I have single object:', a)
             if a in self.appgroup[dg]:
                 self.appgroup[dg][a]['ref'] = self.appgroup[dg][a]['ref']+1
@@ -860,10 +839,8 @@ class PanoramaConfig():
                 return tmp
             elif dg != 'shared':
                 return self.return_applications(self.parent[dg], a)
-            else:
-                return a
-        else:
             return a
+        return a
 
     def devices_ips(self):
         print('Starting devices_ips')
@@ -902,8 +879,8 @@ class PanoramaConfig():
 
     def all_rules_print(self):
         """
-        prints unrolled security rules, regardless, if they are assigned to some device. 
-        not used any more. 
+        prints unrolled security rules, regardless, if they are assigned to some device.
+        not used any more.
         """
         # self.rule[dg][rname][attr] = value
         start = time()
@@ -919,8 +896,8 @@ class PanoramaConfig():
         """
         prints unrolled rule for specific devicegroup
         if device is given, it is matched to template so the zone IPs
-        can also be unrolled. 
-        TODO: it needs to be split into separate functions, it's too big now. 
+        can also be unrolled.
+        TODO: it needs to be split into separate functions, it's too big now.
         """
         fqdn_file = open("I_fqdn_objects", "a")
         bad_rules_file = open("E_bad_rules", "a")
@@ -1025,7 +1002,7 @@ class PanoramaConfig():
                             s = s_ip
                     else:
                         if s not in self.start_end_ips:
-                            print("source ip not converted,", s)                    
+                            print("source ip not converted,", s)
                     matched = 0
                     for fips in flatten(fzoneIPs):
                         if fips == "any":
@@ -1232,7 +1209,10 @@ class PanoramaConfig():
         file_handle.close()
         print('return_zone_routes completed in', time()-start)
 
-    def router_parser(self, t, l, r, f):
+    def router_parser(self, t, l, r):
+        """
+        args: template name, rest of line, regex
+        """
         # print('routes_parser: got line',l)
         m = r.match(l)
         if m:
@@ -1247,7 +1227,7 @@ class PanoramaConfig():
             if attr == 'nexthop ip-address':
                 attr = 'nexthop'
             self.routes[t][route][attr] = value
-            if ( attr == 'destination' or attr == "nexthop" ) and value not in self.start_end_ips:
+            if (attr == 'destination' or attr == "nexthop") and value not in self.start_end_ips:
                 self.start_end_ips[value] = get_ip_range(value)
         else:
             pass
@@ -1316,7 +1296,6 @@ class PanoramaConfig():
         # devicegroups regexes:
         global_regex = re.compile('set (?P<type>[a-z-]+) +(?P<object>[a-zA-sZ0-9-_]+|\"[a-zA-Z0-9-_ ]+\") (?P<rest>.*)$')
         # dgroup_regex = re.compile('set device-group (?P<dgroup>[a-zA-sZ0-9-]+|\"[a-zA-Z0-9- ]+\") (?P<rest>.*)$')
-        # shared_regex = re.compile('set shared (?P<rest>.*)$')
         rule_regex = re.compile('(?P<rtype>[a-z-]+) security rules (?P<rname>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
         nat_regex = re.compile('(?P<rtype>[a-z-]+) nat rules (?P<rname>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z- ]+) (?P<value>.+)')
         address_regex = re.compile('address (?P<aname>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
@@ -1333,17 +1312,14 @@ class PanoramaConfig():
         ts_regex = re.compile('templates (?P<tmembers>.*)$')
         interface_zone_regex = re.compile('config +vsys vsys[0-9] zone (?P<zname>[a-zA-Z0-9_-]+) network layer3 (?P<intf>.*)')
         interface_ip_regex = re.compile('config +network interface .*(?P<intf>(ae|ethernet|vlan|tunnel|loopback)[./0-9]*) (layer3 )?(units )?(?P<attr>[a-z0-9- ]+) (?P<value>[0-9a-zA-Z-_.\/]+|\"[a-zA-Z0-9- ._]+\")')
-        # gregex = re.compile(r'config\s+network\s+interface\s+(?P<_hasUnits>(?=.*\bunits\b))?(?(_hasUnits).*?units\s+|)(?P<intf>\S+)\s+(?P<attr>\S+(\s+\S+)*)\s+(?P<_Vciap>")?(?P<value>(?(_Vciap)[^"]+|\S+))(?(_Vciap)"|)\s*$')
-        # set template atwso-pa-ha1 config  network virtual-router FourSeasons routing-table ip static-route "Default Route" destination 0.0.0.0/0
         router_regex = re.compile('config +network virtual-router (?P<VR>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") routing-table ip static-route (?P<route>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>destination|interface|nexthop ip-address) (?P<value>[0-9a-zA-Z-.\/]+)$')
-        # stack_regex = re.compile('set template-stack (?P<stack>[a-zA-Z0-9-._]+|\"[a-zA-Z0-9- ._]+\") (?P<attr>[a-z-]+) (?P<value>.+)')
         var_regex = re.compile('variable $(?P<var>[a-zA-Z0-9-]+) type (?P<attr>[a-z-]+) (?P<value>.+)')
 
         start = time()
         print('Starting main parser')
         self.add_dg('shared')
         g2 = open('W_unmatched_lines', 'a')
-        fqdns = open('fqdn_objects','w')
+        fqdns = open('fqdn_objects', 'w')
         line = handle.readline()
         while line != "":
             # print("wczytalem linie:", line)
@@ -1474,10 +1450,10 @@ def main():
 if __name__ == "__main__":
     profile_this = False
     MAIN_START = time()
-    if profile_this: 
-        profile.run("main()",'profile.bin')
-        p=pstats.Stats("profile.bin")
+    if profile_this:
+        profile.run("main()", 'profile.bin')
+        p = pstats.Stats("profile.bin")
         p.sort_stats(1).print_stats()
-    else: 
+    else:
         main()
     print("wykonanie zajelo", time()-MAIN_START)
